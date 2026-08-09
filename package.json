@@ -1,0 +1,20 @@
+{
+  "name": "luna-guide",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive 3D setting guide for the Tudor 1926 Luna moon-phase watch",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.172.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.172.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}
