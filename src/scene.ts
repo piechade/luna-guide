@@ -7,6 +7,8 @@ export interface CameraPose {
   target: [number, number, number];
 }
 
+const BASE_FOV = 38; // vertical on landscape; locked as HORIZONTAL fov on portrait
+
 export class SceneManager {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene: THREE.Scene;
@@ -33,7 +35,7 @@ export class SceneManager {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-    this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 800);
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 800);
     this.camera.position.set(30, 34, 30);
 
     this.controls = new OrbitControls(this.camera, canvas);
@@ -54,6 +56,12 @@ export class SceneManager {
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // The wizard panel overlays the lower part of the screen on phones and its
+    // height changes per step — re-anchor the view whenever it resizes.
+    const panel = document.getElementById('panel');
+    if (panel && 'ResizeObserver' in window) {
+      new ResizeObserver(() => this.resize()).observe(panel);
+    }
   }
 
   flyTo(pose: CameraPose, dur = 1.5): void {
@@ -86,7 +94,28 @@ export class SceneManager {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h);
-    this.camera.aspect = w / h;
+
+    // On phones the step panel covers the bottom of the screen. Render into a
+    // virtual, taller image and show its top part, so the camera target lands
+    // in the center of the UNCOVERED area instead of behind the panel.
+    let occlusion = 0;
+    const panel = document.getElementById('panel');
+    if (w <= 640 && panel && panel.offsetParent !== null) {
+      const top = panel.getBoundingClientRect().top;
+      occlusion = Math.round(Math.min(Math.max(0, h - top), h - 140));
+    }
+    const virtualH = h + occlusion;
+    const aspect = w / virtualH;
+    this.camera.aspect = aspect;
+    // Portrait: lock the HORIZONTAL fov instead, so the watch fits the width.
+    this.camera.fov =
+      aspect < 1
+        ? THREE.MathUtils.radToDeg(
+            2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / aspect),
+          )
+        : BASE_FOV;
+    if (occlusion > 0) this.camera.setViewOffset(w, virtualH, 0, occlusion, w, h);
+    else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
   }
 }

@@ -153,10 +153,25 @@
     #webgl-fallback p { font-size: 0.9rem; line-height: 1.6; color: var(--text); }
 
     @media (max-width: 640px) {
-      #panel { left: 8px; right: 8px; bottom: 8px; width: auto; padding: 14px; }
-      #live-strip { top: auto; bottom: unset; right: 8px; flex-direction: column; align-items: flex-end; gap: 6px; }
-      #factsheet-toggle { display: none; }
-      header.brand .sub { display: none; }
+      header.brand { display: none; }
+      #panel {
+        left: 8px; right: 8px; bottom: 8px; width: auto; padding: 14px;
+        max-height: 48vh; overflow-y: auto;
+      }
+      #live-strip {
+        top: 8px; right: 8px;
+        flex-direction: column; align-items: flex-end; gap: 5px;
+        font-size: 0.72rem;
+      }
+      #live-strip .chip { padding: 4px 10px; }
+      #factsheet-toggle {
+        top: 8px; left: 8px; right: auto; bottom: auto;
+        padding: 6px 10px; font-size: 0.72rem;
+      }
+      #factsheet {
+        left: 8px; right: 8px; top: 48px; bottom: auto; width: auto;
+        max-height: 55vh; overflow-y: auto;
+      }
     }
   </style>
 </head>
