@@ -62,13 +62,15 @@ Code and docs in English; the product UI text is German (house rule).
 2. **Handaufzug** — ~27 turns in P1, animated turn counter.
 3. **Sperrzone prüfen** — live check of the displayed watch time; warning band
    on the dial for ~20:00–03:00 (no quick corrections there).
-4. **Mondphase stellen (P2, direction A)** — live computed target phase,
-   instruction "turn to full moon, then N clicks", animated moon disc.
-5. **Datum stellen (P2, direction B)** — set to *yesterday* if the time will
-   subsequently be advanced through midnight, else today.
-6. **Zeit stellen (P3)** — stop-second at a full minute, live reference clock
-   (device time, link to time.is), approach minute from behind, verify the
-   date flip at midnight to confirm AM/PM.
+4. **Datum stellen (P2, Richtung 12 Uhr / clockwise)** — set to *yesterday*;
+   the midnight pass in step 5 flips it to today and confirms AM/PM.
+5. **Zeit stellen (P3)** — stop-second at a full minute, live reference clock
+   (device time, link to time.is), approach minute from behind; the midnight
+   pass also advances the moon disc by one day.
+6. **Mondphase stellen (P2, Richtung 6 Uhr / counterclockwise, LAST)** — live
+   computed target phase, "turn to full moon, then N clicks"; set last because
+   hand-midnights advance the moon disc (order per the SW280-1 manual, verified
+   against the Mühle Teutonia IV Mondphase instructions).
 7. **Krone festschrauben** — final checklist (date, moon, seconds in sync).
 
 Free orbit view at all times; camera flies to the relevant detail per step.

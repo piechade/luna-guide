@@ -10,12 +10,17 @@ complete setting routine in seven animated steps, in German:
 2. Hand-wind ~27 crown turns (Sellita factory spec for a full wind from standstill)
 3. Respect the quick-set lock-out window (~20:00–03:00) — park the hands at a
    safe time first
-4. Set the moon phase day-accurate: turn to the full-moon reference, then advance
-   one click per day since the last full moon (computed live, astronomically)
-5. Quick-set the date to *yesterday*
-6. Advance the hands through midnight (date flips → AM/PM confirmed) and sync to
+4. Quick-set the date to *yesterday* (position 2, towards 12 o'clock / clockwise)
+5. Advance the hands through midnight (date flips → AM/PM confirmed) and sync to
    reference time using the stop-second
+6. Set the moon phase LAST, day-accurate (position 2, towards 6 o'clock /
+   counterclockwise): turn to the full-moon reference, then advance one click per
+   day since the last full moon (computed live, astronomically). Last because the
+   moon disc also advances whenever the hands pass midnight.
 7. Screw the crown back down + final checklist
+
+Crown directions verified against the official manual of the Mühle Glashütte
+Teutonia IV Mondphase, which uses the same SW280-1 base caliber.
 
 ## Technical background
 
