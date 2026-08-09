@@ -148,7 +148,7 @@
       background: var(--panel); color: var(--text);
       border: 1px solid var(--panel-border); border-radius: 999px;
       padding: 8px 14px; cursor: pointer; backdrop-filter: blur(6px);
-      align-items: center; gap: 6px; line-height: 1;
+      align-items: center; gap: 6px;
     }
     #guide-toggle .arr { font-size: 0.72em; line-height: 1; }
     #panel.hidden { display: none; }
@@ -181,7 +181,11 @@
       header.brand .sub { display: none; }
       #btn-collapse { display: none; }
       #step-dots { padding-right: 0; }
-      #guide-toggle { display: inline-flex; font-size: 0.8rem; }
+      #guide-toggle, #factsheet-toggle {
+        padding: 8px 14px; font-size: 0.8rem; line-height: 1.25;
+        width: calc(50% - 12px); text-align: center;
+      }
+      #guide-toggle { display: inline-flex; justify-content: center; }
       #panel {
         left: 8px; right: 8px; bottom: 46px; width: auto; padding: 14px;
         max-height: 45vh; overflow-y: auto;
