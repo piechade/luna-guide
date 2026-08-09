@@ -115,7 +115,14 @@ export class WatchModel {
     // --- Moon disc behind the dial ---
     this.moonDisc = new THREE.Mesh(
       new THREE.CircleGeometry(MOON_DISC_R, 96),
-      new THREE.MeshStandardMaterial({ map: makeMoonDiscTexture(), metalness: 0.25, roughness: 0.55 }),
+      new THREE.MeshStandardMaterial({
+        map: makeMoonDiscTexture(),
+        metalness: 0.25,
+        roughness: 0.55,
+        // The disc overhangs the dial radius towards 6 o'clock — clip it there
+        // so it cannot poke through the case flank (requires localClippingEnabled).
+        clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, 0, -1), DIAL_R - 0.3)],
+      }),
     );
     this.moonDisc.rotation.x = -Math.PI / 2;
     this.moonDisc.position.set(0, DIAL_Y - 0.45, MOON_DISC_CENTER_Z);

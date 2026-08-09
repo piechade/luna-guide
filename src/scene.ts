@@ -28,6 +28,7 @@ export class SceneManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
+    this.renderer.localClippingEnabled = true; // moon disc is clipped at the dial edge
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0b1020);
