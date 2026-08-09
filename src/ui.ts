@@ -52,6 +52,21 @@ export class Wizard {
       .getElementById('factsheet-toggle')!
       .addEventListener('click', () => factsheet.classList.toggle('open'));
 
+    const panel = document.getElementById('panel')!;
+    const collapseBtn = document.getElementById('btn-collapse')!;
+    collapseBtn.addEventListener('click', () => {
+      const collapsed = panel.classList.toggle('collapsed');
+      collapseBtn.textContent = collapsed ? '▴' : '▾';
+      collapseBtn.title = collapsed ? 'Anleitung ausklappen' : 'Anleitung einklappen';
+    });
+
+    // Mobile: guide toggle bottom-left mirrors the factsheet toggle bottom-right
+    const guideToggle = document.getElementById('guide-toggle')!;
+    guideToggle.addEventListener('click', () => {
+      const hidden = panel.classList.toggle('hidden');
+      guideToggle.querySelector('.arr')!.textContent = hidden ? '▴' : '▾';
+    });
+
     startLiveStrip();
     this.goTo(0);
   }

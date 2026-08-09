@@ -68,7 +68,20 @@
       backdrop-filter: blur(10px);
       box-shadow: 0 12px 40px rgba(0,0,0,0.45);
     }
-    #step-dots { display: flex; gap: 6px; margin-bottom: 10px; }
+    #btn-collapse {
+      position: absolute; top: 10px; right: 12px;
+      width: 32px; height: 24px; border-radius: 8px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255,255,255,0.06); color: var(--muted);
+      font: inherit; font-size: 0.8rem; line-height: 1; cursor: pointer;
+      z-index: 1;
+    }
+    #btn-collapse:hover { color: var(--text); background: rgba(255,255,255,0.12); }
+    #panel.collapsed #step-kicker,
+    #panel.collapsed #step-body,
+    #panel.collapsed #controls { display: none; }
+    #panel.collapsed #step-title { margin-bottom: 0; }
+    #step-dots { display: flex; gap: 6px; margin-bottom: 10px; padding-right: 38px; }
     #step-dots .dot {
       height: 4px; flex: 1; border-radius: 2px;
       background: rgba(255,255,255,0.14);
@@ -128,6 +141,17 @@
       padding: 8px 14px; cursor: pointer; backdrop-filter: blur(6px);
     }
     #factsheet-toggle:hover { color: var(--text); }
+    #guide-toggle {
+      display: none;
+      position: absolute; bottom: 8px; left: 8px; z-index: 7;
+      font: inherit; font-weight: 600;
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--panel-border); border-radius: 999px;
+      padding: 8px 14px; cursor: pointer; backdrop-filter: blur(6px);
+      align-items: center; gap: 6px; line-height: 1;
+    }
+    #guide-toggle .arr { font-size: 0.72em; line-height: 1; }
+    #panel.hidden { display: none; }
     #factsheet {
       position: absolute; right: 16px; bottom: 60px; z-index: 6;
       width: min(330px, calc(100vw - 32px));
@@ -153,23 +177,28 @@
     #webgl-fallback p { font-size: 0.9rem; line-height: 1.6; color: var(--text); }
 
     @media (max-width: 640px) {
-      header.brand { display: none; }
+      header.brand { padding: 10px 12px; }
+      header.brand .sub { display: none; }
+      #btn-collapse { display: none; }
+      #step-dots { padding-right: 0; }
+      #guide-toggle { display: inline-flex; font-size: 0.8rem; }
       #panel {
-        left: 8px; right: 8px; bottom: 8px; width: auto; padding: 14px;
-        max-height: 48vh; overflow-y: auto;
+        left: 8px; right: 8px; bottom: 46px; width: auto; padding: 14px;
+        max-height: 45vh; overflow-y: auto;
       }
       #live-strip {
-        top: 8px; right: 8px;
-        flex-direction: column; align-items: flex-end; gap: 5px;
+        top: 42px; right: 8px;
+        flex-direction: row; gap: 6px;
         font-size: 0.72rem;
       }
       #live-strip .chip { padding: 4px 10px; }
       #factsheet-toggle {
-        top: 8px; left: 8px; right: auto; bottom: auto;
-        padding: 6px 10px; font-size: 0.72rem;
+        bottom: 8px; right: 8px;
+        padding: 8px 14px; font-size: 0.8rem;
+        display: block;
       }
       #factsheet {
-        left: 8px; right: 8px; top: 48px; bottom: auto; width: auto;
+        left: 8px; right: 8px; top: auto; bottom: 46px; width: auto;
         max-height: 55vh; overflow-y: auto;
       }
     }
@@ -187,6 +216,7 @@
       <span class="chip">🌙 <b id="live-moon">…</b></span>
     </div>
     <div id="panel">
+      <button id="btn-collapse" title="Anleitung einklappen">▾</button>
       <div id="step-dots"></div>
       <div id="step-kicker"></div>
       <div id="step-title"></div>
@@ -198,7 +228,8 @@
         <button id="btn-next" class="primary">Weiter →</button>
       </div>
     </div>
-    <button id="factsheet-toggle">ⓘ Technische Daten</button>
+    <button id="factsheet-toggle">ⓘ<span class="fs-label"> Technische Daten</span></button>
+    <button id="guide-toggle"><span class="arr">▾</span><span>Guide</span></button>
     <aside id="factsheet">
       <h2>Tudor 1926 Luna · M91560-0002</h2>
       <dl>
