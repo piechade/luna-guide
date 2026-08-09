@@ -13,7 +13,8 @@ export class SceneManager {
   readonly camera: THREE.PerspectiveCamera;
   readonly controls: OrbitControls;
 
-  private flyT = -1;
+  private flying = false;
+  private flyT = 0;
   private flyDur = 0;
   private fromPos = new THREE.Vector3();
   private toPos = new THREE.Vector3();
@@ -62,16 +63,17 @@ export class SceneManager {
     this.toTarget.set(...pose.target);
     this.flyT = 0;
     this.flyDur = dur;
+    this.flying = true;
   }
 
   update(dt: number): void {
-    if (this.flyT >= 0) {
-      this.flyT += dt;
+    if (this.flying) {
+      this.flyT += Math.max(0, dt);
       const raw = Math.min(1, this.flyT / this.flyDur);
       const v = raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
       this.camera.position.lerpVectors(this.fromPos, this.toPos, v);
       this.controls.target.lerpVectors(this.fromTarget, this.toTarget, v);
-      if (raw >= 1) this.flyT = -1;
+      if (raw >= 1) this.flying = false;
     }
     this.controls.update();
   }
@@ -83,7 +85,7 @@ export class SceneManager {
   private resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.renderer.setSize(w, h, false);
+    this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }

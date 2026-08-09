@@ -69,13 +69,23 @@ export class WatchModel {
     caseback.position.y = -4.7;
     this.group.add(caseback);
 
-    // --- Lugs ---
+    // --- Lugs (tapered, hugging the case) ---
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
-        const lug = new THREE.Mesh(new THREE.BoxGeometry(3.4, 3.1, 7.2), steel);
-        lug.position.set(sx * 11.6, -1.2, sz * 18.3);
-        lug.rotation.x = sz * -0.16;
-        lug.rotation.y = sx * sz * 0.12;
+        const geo = new THREE.BoxGeometry(2.9, 2.7, 6.2);
+        // Taper the outer end a little
+        const pos = geo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          if (pos.getZ(i) > 0) {
+            pos.setX(i, pos.getX(i) * 0.72);
+            pos.setY(i, pos.getY(i) * 0.7);
+          }
+        }
+        geo.computeVertexNormals();
+        const lug = new THREE.Mesh(geo, steel);
+        lug.position.set(sx * 10.9, -1.3, sz * 16.6);
+        lug.rotation.x = sz > 0 ? 0.2 : Math.PI - 0.2; // taper always outward, dipping down
+        lug.rotation.y = sx * sz * 0.14;
         this.group.add(lug);
       }
     }
@@ -94,6 +104,7 @@ export class WatchModel {
     );
     dial.rotation.x = -Math.PI / 2;
     dial.position.y = DIAL_Y;
+    dial.renderOrder = 1; // danger sector (2) and crystal (3) must blend on top
     this.group.add(dial);
 
     // Rehaut (chapter ring wall between dial and crystal)
@@ -110,13 +121,22 @@ export class WatchModel {
     this.moonDisc.position.set(0, DIAL_Y - 0.45, MOON_DISC_CENTER_Z);
     this.group.add(this.moonDisc);
 
+    // Opaque annulus just under the dial rim: clips any moon-disc overflow
+    // that would otherwise peek through the dial/rehaut gap.
+    const discMask = new THREE.Mesh(
+      new THREE.RingGeometry(DIAL_R - 0.4, DIAL_R + 0.7, 96),
+      new THREE.MeshBasicMaterial({ color: 0x060b18 }),
+    );
+    discMask.rotation.x = -Math.PI / 2;
+    discMask.position.y = DIAL_Y - 0.32;
+    this.group.add(discMask);
+
     // --- Date plate behind the window at 3 ---
     const datePlate = new THREE.Mesh(
       new THREE.PlaneGeometry(DATE_W + 0.6, DATE_H + 0.6),
       new THREE.MeshBasicMaterial({ map: this.dateDisc.texture }),
     );
     datePlate.rotation.x = -Math.PI / 2;
-    datePlate.rotation.z = Math.PI; // upright when viewed with 12 o'clock away
     datePlate.position.set(DATE_CENTER_X, DIAL_Y - 0.28, 0);
     this.group.add(datePlate);
 
@@ -133,6 +153,7 @@ export class WatchModel {
     );
     this.dangerSector.rotation.x = -Math.PI / 2;
     this.dangerSector.position.y = DIAL_Y + 0.12;
+    this.dangerSector.renderOrder = 2;
     this.group.add(this.dangerSector);
 
     // --- Hands ---
@@ -175,6 +196,7 @@ export class WatchModel {
       }),
     );
     crystal.position.y = 3.6 - domeR * Math.cos(theta);
+    crystal.renderOrder = 3;
     this.group.add(crystal);
 
     // --- Crown at +X ---

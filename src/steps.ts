@@ -42,7 +42,7 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 1 · Vorbereitung',
     title: 'Krone aufschrauben',
-    camera: { pos: [36, 13, 17], target: [20, 0, 0] },
+    camera: { pos: [42, 21, 9], target: [21.5, 0, 0] },
     body: () => `
       <p>Die Krone der 1926 Luna ist <span class="hl">verschraubt</span> — sie dichtet das
       Gehäuse bis <b>100 m</b> ab. Drehe sie <b>gegen den Uhrzeigersinn</b>, bis sich das
@@ -73,7 +73,7 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 2 · Standard-Routine: erst aufziehen',
     title: 'Handaufzug — ca. 27 Umdrehungen',
-    camera: { pos: [34, 16, 20], target: [19, 0, 0] },
+    camera: { pos: [38, 24, 19], target: [19, 0, 0] },
     body: () => `
       <p>Eine stehende Automatik wird <b>zuerst von Hand vollgezogen</b>: in
       <code>Position 1</code> die Krone <b>im Uhrzeigersinn</b> drehen — laut
@@ -109,7 +109,7 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 3 · Sicherheit',
     title: 'Sperrzone: erst auf sichere Zeit stellen',
-    camera: { pos: [0, 46, 14], target: [0, 0, 2] },
+    camera: { pos: [0, 48, 13], target: [0, 0, 1] },
     body: () => `
       <p>Zwischen ca. <b>20:00 und 03:00 Uhr</b> (rot markiert) greift das Kalender­räderwerk
       in die Datums- und Mondscheibe ein. <span class="hl">Schnellkorrekturen in diesem
@@ -129,10 +129,10 @@ export const STEPS: Step[] = [
       const tl = new Timeline();
       tl.tween(0.6, 0.9, (v) => (watch.crownPull = 1 + v * 2), easeOut); // to pos. 3
       tl.call(1.5, () => (watch.running = false)); // stop-second
-      tl.tween(1.2, 1.2, (v) => (watch.dangerOpacity = v * 0.42));
+      tl.tween(1.2, 1.2, (v) => (watch.dangerOpacity = v * 0.55));
       tl.tween(2.8, 2.6, (v) => (watch.displayMinutes = START_TIME + 1.5 - v * (START_TIME + 1.5 - SAFE_TIME)));
       tl.tween(6.0, 0.8, (v) => (watch.crownPull = 3 - v), easeOut); // back to pos. 2
-      tl.tween(6.8, 0.8, (v) => (watch.dangerOpacity = 0.42 - v * 0.3));
+      tl.tween(6.8, 0.8, (v) => (watch.dangerOpacity = 0.55 - v * 0.35));
       return tl;
     },
   },
@@ -140,7 +140,7 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 4 · Standard-Routine: Mond taggenau',
     title: 'Mondphase einstellen',
-    camera: { pos: [2, 17, 28], target: [0, 2, 9] },
+    camera: { pos: [0, 24, 32], target: [0, 1, 8] },
     body: ({ moon }) => {
       const n = moon.clicksFromFullMoon;
       const clickLine =
@@ -166,7 +166,7 @@ export const STEPS: Step[] = [
       ctx.watch.running = true;
       ctx.watch.displayMinutes = SAFE_TIME;
       ctx.watch.crownPull = 2;
-      ctx.watch.dangerOpacity = 0.12;
+      ctx.watch.dangerOpacity = 0.2;
     },
     build: ({ watch, moon }) => {
       const tl = new Timeline();
@@ -188,7 +188,7 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 5 · Kalender',
     title: 'Datum auf GESTERN stellen',
-    camera: { pos: [22, 17, 15], target: [12, 2, 0] },
+    camera: { pos: [26, 22, 13], target: [12.5, 1, 0] },
     body: ({ today }) => `
       <p>Gleiche <code>Position 2</code>, <b>andere Drehrichtung</b>: Jetzt springt das Datum
       im Fenster bei 3 Uhr.</p>
@@ -219,7 +219,7 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 6 · Standard-Routine: Atomzeit',
     title: 'Zeit sekundengenau stellen',
-    camera: { pos: [0, 40, 24], target: [0, 0, 0] },
+    camera: { pos: [0, 44, 21], target: [0, 0, 0] },
     body: () => `
       <p><b>Warte, bis der Sekundenzeiger auf 12 steht</b>, und ziehe die Krone dann ganz
       heraus in <code>Position 3</code> → <span class="hl">Sekundenstopp</span>, das Werk hält an.</p>
@@ -272,7 +272,7 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 7 · Abschluss',
     title: 'Krone festschrauben & Endkontrolle',
-    camera: { pos: [26, 30, 34], target: [0, 0, 0] },
+    camera: { pos: [28, 34, 38], target: [0, 0, 0] },
     body: ({ moon, today }) => `
       <p>Krone leicht <b>hineindrücken und im Uhrzeigersinn festschrauben</b>, bis spürbarer
       Widerstand kommt — erst dann sind die 100 m Wasserdichtigkeit wieder gewährleistet.</p>

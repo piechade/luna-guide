@@ -25,10 +25,12 @@ try {
 sceneMgr.scene.add(ctx.watch.group);
 
 const wizard = new Wizard(sceneMgr, ctx);
+// Debug/verification hook (harmless in production)
+(window as unknown as Record<string, unknown>).__luna = { watch: ctx.watch, wizard, moon: ctx.moon, sceneMgr };
 
 let last = performance.now();
 function frame(now: number): void {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
   last = now;
   wizard.update(dt);
   ctx.watch.tick(dt);
