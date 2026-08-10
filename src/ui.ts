@@ -142,7 +142,7 @@ export function renderFallback(ctx: StepCtx): void {
     </section>`,
   ).join('');
   content.innerHTML = `
-    <h2>Luna Guide — Tudor 1926 Luna einstellen</h2>
+    <h2>Luna Guide — Mondphasenuhr einstellen (Sellita SW280-1, z. B. Tudor 1926 Luna)</h2>
     <p class="muted">3D-Ansicht nicht verfügbar (WebGL deaktiviert). Hier die komplette
     Anleitung als Text:</p>
     ${sections}`;

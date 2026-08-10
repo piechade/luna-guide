@@ -15,7 +15,6 @@ export const DATE_H = 2.3;
 // ~0.72 R, slender faceted wedges on the odd hours, shield + TUDOR + GENEVE
 // above the center, and a single tiny "SWISS MADE" line on the outer flange.
 const NUM_FONT = `'Century Gothic', 'Futura', 'Avenir Next', 'Segoe UI', sans-serif`;
-const SERIF_FONT = `Georgia, 'Times New Roman', serif`;
 
 const SIZE = 1024;
 const S = SIZE / 2 / DIAL_R; // px per mm
@@ -112,15 +111,9 @@ export function makeDialTexture(): THREE.CanvasTexture {
   // clear dial on BOTH sides, like the original
   drawWedge(ctx, cx, cy, Math.PI / 2, 13.75, 12.95, 0.95, 0.78);
 
-  // Logo block: plain-text TUDOR / GENEVE reference only — deliberately NO
-  // shield logo. The word mark in plain type is descriptive/referential use;
-  // reproducing the registered shield emblem would go beyond that.
-  ctx.fillStyle = '#eef2f8';
-  ctx.font = `600 ${px(1.6)}px ${SERIF_FONT}`;
-  drawSpaced(ctx, 'TUDOR', cx, cy - px(6.4), px(0.42));
-  ctx.font = `500 ${px(0.82)}px ${SERIF_FONT}`;
-  ctx.fillStyle = 'rgba(228,234,245,0.9)';
-  drawSpaced(ctx, 'GENEVE', cx, cy - px(5.15), px(0.42));
+  // Deliberately NO brand text or emblem on the dial: naming the watch in
+  // prose is referential use, but printing the mark on the (virtual) product
+  // itself would not be. The logo area stays empty.
 
   // SWISS MADE: tiny, curved along the bottom edge of the dial
   ctx.font = `500 ${px(0.62)}px 'Segoe UI', sans-serif`;
@@ -268,22 +261,6 @@ function drawArcText(
     ctx.fillText(ch, 0, 0);
     ctx.restore();
     a -= (widths[i] / 2 + spacing / 2) / r;
-  });
-}
-
-function drawSpaced(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  spacing: number,
-): void {
-  const widths = [...text].map((ch) => ctx.measureText(ch).width);
-  const total = widths.reduce((a, b) => a + b, 0) + spacing * (text.length - 1);
-  let cur = x - total / 2;
-  [...text].forEach((ch, i) => {
-    ctx.fillText(ch, cur + widths[i] / 2, y);
-    cur += widths[i] + spacing;
   });
 }
 
