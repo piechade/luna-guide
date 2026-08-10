@@ -41,6 +41,10 @@
     header.brand h1 { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.06em; }
     header.brand h1 .luna { color: var(--accent-strong); }
     header.brand .sub { font-size: 0.78rem; color: var(--muted); }
+    header.brand .disclaimer { display: block; font-size: 0.64rem; color: var(--muted); opacity: 0.75; }
+    #factsheet .disclaimer {
+      margin-top: 10px; font-size: 0.68rem; color: var(--muted); line-height: 1.4;
+    }
 
     #live-strip {
       position: absolute; top: 12px; right: 16px; z-index: 6;
@@ -213,7 +217,9 @@
     <canvas id="scene"></canvas>
     <header class="brand">
       <h1>LUNA <span class="luna">GUIDE</span></h1>
-      <span class="sub">Tudor 1926 Luna · Kaliber T607-9 (Sellita SW280-1) · Schritt für Schritt</span>
+      <span class="sub">Tudor 1926 Luna · Kaliber T607-9 (Sellita SW280-1) · Schritt für Schritt
+        <span class="disclaimer">Inoffizielle Fan-Anleitung — nicht mit TUDOR verbunden oder von TUDOR autorisiert.</span>
+      </span>
     </header>
     <div id="live-strip">
       <span class="chip">🕐 <b id="live-time">--:--:--</b></span>
@@ -250,6 +256,9 @@
         <dt>Aufzug</dt><dd>Automatik + Handaufzug</dd>
         <dt>Sekundenstopp</dt><dd>ja</dd>
       </dl>
+      <p class="disclaimer">Inoffizielle Fan-Anleitung. Nicht mit TUDOR oder Sellita verbunden,
+        nicht gesponsert oder autorisiert. Modellnamen dienen nur der Beschreibung.
+        Maßgeblich ist immer die offizielle Bedienungsanleitung der Uhr.</p>
     </aside>
     <div id="webgl-fallback"><div class="inner" id="webgl-fallback-content"></div></div>
   </div>

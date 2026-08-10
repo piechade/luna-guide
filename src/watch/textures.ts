@@ -112,14 +112,15 @@ export function makeDialTexture(): THREE.CanvasTexture {
   // clear dial on BOTH sides, like the original
   drawWedge(ctx, cx, cy, Math.PI / 2, 13.75, 12.95, 0.95, 0.78);
 
-  // Logo block: shield, TUDOR, GENEVE
-  drawShield(ctx, cx, cy - px(7.9), px(1.95), px(1.95));
+  // Logo block: plain-text TUDOR / GENEVE reference only — deliberately NO
+  // shield logo. The word mark in plain type is descriptive/referential use;
+  // reproducing the registered shield emblem would go beyond that.
   ctx.fillStyle = '#eef2f8';
   ctx.font = `600 ${px(1.6)}px ${SERIF_FONT}`;
-  drawSpaced(ctx, 'TUDOR', cx, cy - px(5.8), px(0.42));
+  drawSpaced(ctx, 'TUDOR', cx, cy - px(6.4), px(0.42));
   ctx.font = `500 ${px(0.82)}px ${SERIF_FONT}`;
   ctx.fillStyle = 'rgba(228,234,245,0.9)';
-  drawSpaced(ctx, 'GENEVE', cx, cy - px(4.55), px(0.42));
+  drawSpaced(ctx, 'GENEVE', cx, cy - px(5.15), px(0.42));
 
   // SWISS MADE: tiny, curved along the bottom edge of the dial
   ctx.font = `500 ${px(0.62)}px 'Segoe UI', sans-serif`;
@@ -239,63 +240,6 @@ function drawWedge(
   ctx.lineTo(px(rInner), px(tipW / 2));
   ctx.closePath();
   ctx.fill();
-  ctx.restore();
-}
-
-/** Simplified TUDOR shield: crenellated top, sides tapering to a point. */
-function drawShield(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): void {
-  const shieldPath = () => {
-    const t = -h / 2;
-    const notch = h * 0.16;
-    const seg = w / 5;
-    ctx.beginPath();
-    ctx.moveTo(-w / 2, t);
-    ctx.lineTo(-w / 2 + seg, t);
-    ctx.lineTo(-w / 2 + seg, t + notch);
-    ctx.lineTo(-w / 2 + 2 * seg, t + notch);
-    ctx.lineTo(-w / 2 + 2 * seg, t);
-    ctx.lineTo(-w / 2 + 3 * seg, t);
-    ctx.lineTo(-w / 2 + 3 * seg, t + notch);
-    ctx.lineTo(-w / 2 + 4 * seg, t + notch);
-    ctx.lineTo(-w / 2 + 4 * seg, t);
-    ctx.lineTo(w / 2, t);
-    ctx.lineTo(w / 2, h * 0.05);
-    ctx.quadraticCurveTo(w / 2, h * 0.32, 0, h / 2);
-    ctx.quadraticCurveTo(-w / 2, h * 0.32, -w / 2, h * 0.05);
-    ctx.closePath();
-  };
-  ctx.save();
-  ctx.translate(x + 1.5, y + 2.5);
-  ctx.fillStyle = 'rgba(8,16,34,0.7)';
-  shieldPath();
-  ctx.fill();
-  ctx.restore();
-  ctx.save();
-  ctx.translate(x, y);
-  const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
-  grad.addColorStop(0, '#f2f5fa');
-  grad.addColorStop(0.55, '#b9c2d0');
-  grad.addColorStop(1, '#e8edf5');
-  ctx.fillStyle = grad;
-  shieldPath();
-  ctx.fill();
-  // Inner divisions: horizontal band + vertical split, hinted in shadow tone
-  ctx.strokeStyle = 'rgba(70,80,98,0.55)';
-  ctx.lineWidth = Math.max(1.2, h * 0.045);
-  ctx.beginPath();
-  ctx.moveTo(-w / 2 + ctx.lineWidth, -h / 6);
-  ctx.lineTo(w / 2 - ctx.lineWidth, -h / 6);
-  ctx.moveTo(0, -h / 6);
-  ctx.lineTo(0, h / 2 - ctx.lineWidth);
-  ctx.stroke();
-  shieldPath();
-  ctx.stroke();
   ctx.restore();
 }
 
