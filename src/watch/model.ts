@@ -186,14 +186,16 @@ export class WatchModel {
     this.group.add(cap);
 
     // --- Crystal (domed sapphire) ---
-    const domeR = 34;
-    const theta = Math.asin(16.9 / domeR);
+    // Large sphere radius → gentle dome (~2 mm rise), colorless and near
+    // invisible like the real sapphire instead of a tall milky blue bubble.
+    const domeR = 70;
+    const theta = Math.asin(16.5 / domeR);
     const crystal = new THREE.Mesh(
       new THREE.SphereGeometry(domeR, 96, 48, 0, Math.PI * 2, 0, theta),
       new THREE.MeshPhysicalMaterial({
-        color: 0xdfeaff,
+        color: 0xffffff,
         transparent: true,
-        opacity: 0.14,
+        opacity: 0.06,
         roughness: 0.03,
         metalness: 0,
         clearcoat: 1,

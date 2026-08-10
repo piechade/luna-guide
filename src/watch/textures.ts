@@ -4,11 +4,18 @@ import * as THREE from 'three';
 // the moon aperture and the date window), the two-moon sky disc, the date disc.
 
 export const DIAL_R = 16.2; // mm
-export const APERTURE_CENTER = 9.4; // distance from dial center towards 6 o'clock
-export const APERTURE_R = 4.1;
-export const DATE_CENTER_X = 12.55; // towards 3 o'clock
-export const DATE_W = 3.1;
-export const DATE_H = 3.3;
+export const APERTURE_CENTER = 7.9; // distance from dial center towards 6 o'clock
+export const APERTURE_R = 4.3;
+export const DATE_CENTER_X = 10.2; // towards 3 o'clock (inside the numeral ring, like the original)
+export const DATE_W = 2.7;
+export const DATE_H = 2.3;
+
+// Proportions taken from TUDOR's official M91560-0002 product photography:
+// minute DOTS at ~0.87 R (larger pearls on the fives), applied even numerals at
+// ~0.72 R, slender faceted wedges on the odd hours, shield + TUDOR + GENEVE
+// above the center, and a single tiny "SWISS MADE" line on the outer flange.
+const NUM_FONT = `'Century Gothic', 'Futura', 'Avenir Next', 'Segoe UI', sans-serif`;
+const SERIF_FONT = `Georgia, 'Times New Roman', serif`;
 
 const SIZE = 1024;
 const S = SIZE / 2 / DIAL_R; // px per mm
@@ -26,9 +33,9 @@ export function makeDialTexture(): THREE.CanvasTexture {
 
   // Base blue with vignette
   const base = ctx.createRadialGradient(cx, cy, 0, cx, cy, SIZE / 2);
-  base.addColorStop(0, '#1d4a80');
-  base.addColorStop(0.65, '#153a68');
-  base.addColorStop(1, '#0c2547');
+  base.addColorStop(0, '#1a4478');
+  base.addColorStop(0.65, '#123663');
+  base.addColorStop(1, '#0b2344');
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, SIZE, SIZE);
 
@@ -50,81 +57,74 @@ export function makeDialTexture(): THREE.CanvasTexture {
   }
   ctx.restore();
 
-  // Broad sheen from 10-o'clock direction
+  // Broad sheen from 10-o'clock direction (kept subtle — the real dial only
+  // washes out under direct light, not permanently)
   const sheen = ctx.createLinearGradient(0, 0, SIZE, SIZE);
-  sheen.addColorStop(0, 'rgba(180,210,255,0.16)');
+  sheen.addColorStop(0, 'rgba(180,210,255,0.07)');
   sheen.addColorStop(0.45, 'rgba(180,210,255,0)');
-  sheen.addColorStop(1, 'rgba(0,0,30,0.18)');
+  sheen.addColorStop(1, 'rgba(0,0,30,0.14)');
   ctx.fillStyle = sheen;
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // Minute track
+  // Minute track: dots, with larger pearls on the fives
   ctx.save();
   ctx.translate(cx, cy);
   for (let m = 0; m < 60; m++) {
     const a = (m / 60) * Math.PI * 2 - Math.PI / 2; // 0 => 12 o'clock at top
     const isFive = m % 5 === 0;
-    ctx.strokeStyle = isFive ? 'rgba(226,232,244,0.95)' : 'rgba(200,210,228,0.55)';
-    ctx.lineWidth = isFive ? 4 : 2;
-    const r0 = px(isFive ? 15.0 : 15.4);
-    const r1 = px(15.9);
+    ctx.fillStyle = isFive ? 'rgba(230,236,246,0.95)' : 'rgba(206,215,230,0.7)';
+    const r = px(14.35);
     ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
-    ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
-    ctx.stroke();
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, px(isFive ? 0.23 : 0.12), 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 
-  // Applied-look Arabic numerals (silver with darker edge)
-  const numeralHours = [1, 2, 4, 5, 7, 8, 10, 11];
+  // Applied-look Arabic numerals on the EVEN hours only (6 → moon aperture)
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (const h of numeralHours) {
+  for (const h of [12, 2, 4, 8, 10]) {
     const a = (h / 12) * Math.PI * 2 - Math.PI / 2;
-    const r = px(12.9);
+    const r = px(11.7);
     const x = cx + Math.cos(a) * r;
     const y = cy + Math.sin(a) * r;
-    ctx.font = `600 ${px(3.3)}px Georgia, serif`;
-    ctx.fillStyle = 'rgba(10,20,40,0.85)';
+    ctx.font = `400 ${px(3.5)}px ${NUM_FONT}`;
+    ctx.fillStyle = 'rgba(8,16,34,0.8)';
     ctx.fillText(String(h), x + 2, y + 3);
-    const grad = ctx.createLinearGradient(x, y - px(1.6), x, y + px(1.6));
-    grad.addColorStop(0, '#f2f5fa');
+    const grad = ctx.createLinearGradient(x, y - px(1.7), x, y + px(1.7));
+    grad.addColorStop(0, '#f4f7fb');
     grad.addColorStop(0.5, '#b9c2d0');
-    grad.addColorStop(1, '#e8edf5');
+    grad.addColorStop(1, '#eaeff6');
     ctx.fillStyle = grad;
     ctx.fillText(String(h), x, y);
   }
 
-  // Faceted arrow markers at 12 and 9 (3 carries the date window)
-  drawArrow(ctx, cx, cy - px(13.1), 0);
-  drawArrow(ctx, cx - px(13.1), cy, -Math.PI / 2);
+  // Slender faceted wedge markers on the odd hours, tips pointing inward.
+  // The one at 3 is short and sits outside the date window.
+  for (const h of [1, 3, 5, 7, 9, 11]) {
+    const a = (h / 12) * Math.PI * 2 - Math.PI / 2;
+    // 3 carries a horizontal cut-off cone between date window and dot ring
+    if (h === 3) drawWedge(ctx, cx, cy, a, 13.6, 12.1, 0.72, 0.4);
+    else drawWedge(ctx, cx, cy, a, 12.9, 10.4, 0.85);
+  }
 
-  // Logo block
-  ctx.fillStyle = '#e6ebf4';
-  ctx.font = `600 ${px(1.9)}px "Segoe UI", sans-serif`;
-  drawSpaced(ctx, 'TUDOR', cx, cy - px(7.2), px(0.55));
-  ctx.font = `400 ${px(1.05)}px "Segoe UI", sans-serif`;
-  ctx.fillStyle = 'rgba(220,228,242,0.85)';
-  drawSpaced(ctx, '1926  LUNA', cx, cy - px(5.1), px(0.3));
+  // Applied trapezoid at 6, floating between aperture and 30-min pearl with
+  // clear dial on BOTH sides, like the original
+  drawWedge(ctx, cx, cy, Math.PI / 2, 13.75, 12.95, 0.95, 0.78);
 
-  // SWISS MADE at the bottom edge, flanking the aperture
-  ctx.font = `500 ${px(0.85)}px "Segoe UI", sans-serif`;
-  ctx.fillStyle = 'rgba(210,220,238,0.8)';
-  ctx.fillText('SWISS', cx - px(6.9), cy + px(14.9));
-  ctx.fillText('MADE', cx + px(6.9), cy + px(14.9));
+  // Logo block: shield, TUDOR, GENEVE
+  drawShield(ctx, cx, cy - px(7.9), px(1.95), px(1.95));
+  ctx.fillStyle = '#eef2f8';
+  ctx.font = `600 ${px(1.6)}px ${SERIF_FONT}`;
+  drawSpaced(ctx, 'TUDOR', cx, cy - px(5.8), px(0.42));
+  ctx.font = `500 ${px(0.82)}px ${SERIF_FONT}`;
+  ctx.fillStyle = 'rgba(228,234,245,0.9)';
+  drawSpaced(ctx, 'GENEVE', cx, cy - px(4.55), px(0.42));
 
-  // Polished bevel ring around the sky aperture
-  ctx.save();
-  ctx.translate(cx, cy + px(APERTURE_CENTER));
-  const bevel = ctx.createRadialGradient(0, 0, px(APERTURE_R * 0.92), 0, 0, px(APERTURE_R + 0.55));
-  bevel.addColorStop(0, 'rgba(240,245,255,0.95)');
-  bevel.addColorStop(0.6, 'rgba(150,165,190,0.9)');
-  bevel.addColorStop(1, 'rgba(240,245,255,0.15)');
-  ctx.fillStyle = bevel;
-  ctx.beginPath();
-  ctx.arc(0, 0, px(APERTURE_R + 0.55), 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  // SWISS MADE: tiny, curved along the bottom edge of the dial
+  ctx.font = `500 ${px(0.62)}px 'Segoe UI', sans-serif`;
+  ctx.fillStyle = 'rgba(235,240,248,0.92)';
+  drawArcText(ctx, 'SWISS MADE', cx, cy, px(15.45), px(0.14));
 
   // Frame around the date window
   ctx.save();
@@ -147,37 +147,184 @@ export function makeDialTexture(): THREE.CanvasTexture {
   );
   ctx.globalCompositeOperation = 'source-over';
 
+  // Silver cloud bank fixed to the dial along the aperture bottom (the moon
+  // disc rises and sets behind it, as on the real watch). Drawn after the
+  // punch so it reads as dial, clipped to the aperture circle.
+  ctx.save();
+  ctx.translate(cx, cy + px(APERTURE_CENTER));
+  ctx.beginPath();
+  ctx.arc(0, 0, px(APERTURE_R), 0, Math.PI * 2);
+  ctx.clip();
+  const ar = px(APERTURE_R);
+  const cloudGrad = ctx.createLinearGradient(0, 0, 0, ar);
+  cloudGrad.addColorStop(0, '#eef1f5');
+  cloudGrad.addColorStop(1, '#b4bfcc');
+  ctx.fillStyle = cloudGrad;
+  for (const [dx, dy, r] of [
+    [-0.52, 0.6, 0.36],
+    [-0.1, 0.68, 0.4],
+    [0.32, 0.72, 0.32],
+    [0.64, 0.6, 0.26],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(dx * ar, dy * ar, r * ar, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Thin polished ring around the aperture
+  ctx.save();
+  ctx.translate(cx, cy + px(APERTURE_CENTER));
+  const ringGrad = ctx.createLinearGradient(-ar, -ar, ar, ar);
+  ringGrad.addColorStop(0, 'rgba(245,248,252,0.95)');
+  ringGrad.addColorStop(0.5, 'rgba(150,162,180,0.9)');
+  ringGrad.addColorStop(1, 'rgba(235,240,248,0.85)');
+  ctx.strokeStyle = ringGrad;
+  ctx.lineWidth = px(0.22);
+  ctx.beginPath();
+  ctx.arc(0, 0, px(APERTURE_R + 0.08), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   return tex;
 }
 
-function drawArrow(ctx: CanvasRenderingContext2D, x: number, y: number, rot: number): void {
+/** Slender faceted marker along the hour direction, tip pointing inward. */
+function drawWedge(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  angle: number,
+  rOuter: number,
+  rInner: number,
+  baseW: number,
+  tipW = 0,
+): void {
+  const path = (o: number) => {
+    ctx.beginPath();
+    ctx.moveTo(px(rOuter), -px(baseW / 2) + o);
+    ctx.lineTo(px(rOuter), px(baseW / 2) + o);
+    ctx.lineTo(px(rInner), px(tipW / 2) + o);
+    ctx.lineTo(px(rInner), -px(tipW / 2) + o);
+    ctx.closePath();
+  };
+  // Drop shadow
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rot);
-  const w = px(1.5);
-  const h = px(2.3);
-  const grad = ctx.createLinearGradient(-w, 0, w, 0);
-  grad.addColorStop(0, '#f2f5fa');
-  grad.addColorStop(0.5, '#aab4c4');
-  grad.addColorStop(1, '#e8edf5');
-  ctx.fillStyle = 'rgba(10,20,40,0.85)';
+  ctx.translate(cx + 2, cy + 3);
+  ctx.rotate(angle);
+  ctx.fillStyle = 'rgba(8,16,34,0.75)';
+  path(0);
+  ctx.fill();
+  ctx.restore();
+  // Two facets: one bright, one shaded, split along the marker's spine
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#f2f5fa';
   ctx.beginPath();
-  ctx.moveTo(2, h / 2 + 3);
-  ctx.lineTo(-w / 2 + 2, -h / 2 + 3);
-  ctx.lineTo(w / 2 + 2, -h / 2 + 3);
+  ctx.moveTo(px(rOuter), -px(baseW / 2));
+  ctx.lineTo(px(rOuter), 0);
+  ctx.lineTo(px(rInner), 0);
+  ctx.lineTo(px(rInner), -px(tipW / 2));
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = grad;
+  ctx.fillStyle = '#9aa5b5';
   ctx.beginPath();
-  ctx.moveTo(0, h / 2); // point towards dial center
-  ctx.lineTo(-w / 2, -h / 2);
-  ctx.lineTo(w / 2, -h / 2);
+  ctx.moveTo(px(rOuter), px(baseW / 2));
+  ctx.lineTo(px(rOuter), 0);
+  ctx.lineTo(px(rInner), 0);
+  ctx.lineTo(px(rInner), px(tipW / 2));
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+/** Simplified TUDOR shield: crenellated top, sides tapering to a point. */
+function drawShield(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const shieldPath = () => {
+    const t = -h / 2;
+    const notch = h * 0.16;
+    const seg = w / 5;
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, t);
+    ctx.lineTo(-w / 2 + seg, t);
+    ctx.lineTo(-w / 2 + seg, t + notch);
+    ctx.lineTo(-w / 2 + 2 * seg, t + notch);
+    ctx.lineTo(-w / 2 + 2 * seg, t);
+    ctx.lineTo(-w / 2 + 3 * seg, t);
+    ctx.lineTo(-w / 2 + 3 * seg, t + notch);
+    ctx.lineTo(-w / 2 + 4 * seg, t + notch);
+    ctx.lineTo(-w / 2 + 4 * seg, t);
+    ctx.lineTo(w / 2, t);
+    ctx.lineTo(w / 2, h * 0.05);
+    ctx.quadraticCurveTo(w / 2, h * 0.32, 0, h / 2);
+    ctx.quadraticCurveTo(-w / 2, h * 0.32, -w / 2, h * 0.05);
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.translate(x + 1.5, y + 2.5);
+  ctx.fillStyle = 'rgba(8,16,34,0.7)';
+  shieldPath();
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.translate(x, y);
+  const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+  grad.addColorStop(0, '#f2f5fa');
+  grad.addColorStop(0.55, '#b9c2d0');
+  grad.addColorStop(1, '#e8edf5');
+  ctx.fillStyle = grad;
+  shieldPath();
+  ctx.fill();
+  // Inner divisions: horizontal band + vertical split, hinted in shadow tone
+  ctx.strokeStyle = 'rgba(70,80,98,0.55)';
+  ctx.lineWidth = Math.max(1.2, h * 0.045);
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + ctx.lineWidth, -h / 6);
+  ctx.lineTo(w / 2 - ctx.lineWidth, -h / 6);
+  ctx.moveTo(0, -h / 6);
+  ctx.lineTo(0, h / 2 - ctx.lineWidth);
+  ctx.stroke();
+  shieldPath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Text curved along the BOTTOM edge of the dial: glyphs follow the circle of
+ * radius r, upright relative to the dial center, reading left → right.
+ */
+function drawArcText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  cy: number,
+  r: number,
+  spacing: number,
+): void {
+  const widths = [...text].map((ch) => ctx.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0) + spacing * (text.length - 1);
+  // Start angle: left end of the arc (angles decrease as we advance rightwards)
+  let a = Math.PI / 2 + total / 2 / r;
+  [...text].forEach((ch, i) => {
+    const adv = (widths[i] / 2 + (i > 0 ? spacing / 2 : 0)) / r;
+    a -= adv;
+    ctx.save();
+    ctx.translate(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.rotate(a - Math.PI / 2);
+    ctx.fillText(ch, 0, 0);
+    ctx.restore();
+    a -= (widths[i] / 2 + spacing / 2) / r;
+  });
 }
 
 function drawSpaced(
@@ -196,7 +343,7 @@ function drawSpaced(
   });
 }
 
-/** Deep-blue sky disc with two golden moons and scattered stars. */
+/** Blue sky disc with two brushed-silver moons and four-point silver stars. */
 export function makeMoonDiscTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 512;
@@ -205,60 +352,95 @@ export function makeMoonDiscTexture(): THREE.CanvasTexture {
   const cy = 256;
 
   const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 256);
-  bg.addColorStop(0, '#122c55');
-  bg.addColorStop(1, '#081a38');
+  bg.addColorStop(0, '#16437c');
+  bg.addColorStop(1, '#0c2a52');
   ctx.fillStyle = bg;
   ctx.beginPath();
   ctx.arc(cx, cy, 256, 0, Math.PI * 2);
   ctx.fill();
 
-  // Stars (deterministic pseudo-random)
-  for (let i = 0; i < 90; i++) {
-    const a = (Math.sin(i * 127.1) * 43758.5453) % 1;
-    const b = (Math.sin(i * 311.7) * 12543.897) % 1;
-    const r = Math.abs(a) * 235;
-    const th = Math.abs(b) * Math.PI * 2;
+  // Subtle linear brushing across the disc
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 256, 0, Math.PI * 2);
+  ctx.clip();
+  for (let i = 0; i < 160; i++) {
+    const x = Math.abs(Math.sin(i * 78.233) * 43758.5453) % 1 * 512;
+    const bright = i % 2 === 0;
+    ctx.strokeStyle = bright ? 'rgba(220,235,255,0.05)' : 'rgba(0,10,30,0.06)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 512);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Four-point silver sparkle stars (deterministic pseudo-random)
+  for (let i = 0; i < 22; i++) {
+    const a = Math.abs(Math.sin(i * 127.1) * 43758.5453) % 1;
+    const b = Math.abs(Math.sin(i * 311.7) * 12543.897) % 1;
+    const r = 60 + a * 175;
+    const th = b * Math.PI * 2;
     const x = cx + Math.cos(th) * r;
     const y = cy + Math.sin(th) * r;
-    const s = 1 + (Math.abs(a * b) % 1) * 2.2;
-    ctx.fillStyle = i % 7 === 0 ? 'rgba(255,220,150,0.95)' : 'rgba(230,240,255,0.85)';
-    ctx.beginPath();
-    ctx.arc(x, y, s, 0, Math.PI * 2);
-    ctx.fill();
+    const s = 5 + ((a * b * 7919) % 1) * 8;
+    drawSparkle(ctx, x, y, s);
   }
 
   // Two moons, opposite each other on the carrying circle
   for (const ang of [0, Math.PI]) {
-    const mr = 256 * 0.47; // carrying radius in px (disc r = 256px = MOON_DISC_R mm)
+    // Carrying radius = disc-center → aperture-center distance (3.1 mm of
+    // 7.6 mm disc radius), so the full-moon pose is centered in the aperture.
+    const mr = 256 * (3.1 / 7.6);
     const x = cx + Math.sin(ang) * mr;
     const y = cy - Math.cos(ang) * mr;
-    const moonR = 256 * 0.21;
+    const moonR = 256 * 0.24;
     const g = ctx.createRadialGradient(x - moonR * 0.35, y - moonR * 0.35, moonR * 0.1, x, y, moonR);
-    g.addColorStop(0, '#ffe9a8');
-    g.addColorStop(0.7, '#f0c65c');
-    g.addColorStop(1, '#c99a33');
+    g.addColorStop(0, '#fbfcfe');
+    g.addColorStop(0.6, '#dde3ea');
+    g.addColorStop(1, '#a8b3c2');
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(x, y, moonR, 0, Math.PI * 2);
     ctx.fill();
-    // Craters
-    ctx.fillStyle = 'rgba(160,120,40,0.35)';
-    for (const [dx, dy, cr] of [
-      [-0.3, 0.1, 0.16],
-      [0.25, -0.2, 0.12],
-      [0.05, 0.38, 0.1],
-      [0.35, 0.28, 0.08],
-    ]) {
+    ctx.strokeStyle = 'rgba(120,132,148,0.5)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Faint brushing on the moon face
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, moonR, 0, Math.PI * 2);
+    ctx.clip();
+    for (let i = 0; i < 14; i++) {
+      const yy = y - moonR + ((i + 0.5) / 14) * moonR * 2;
+      ctx.strokeStyle = i % 2 === 0 ? 'rgba(255,255,255,0.12)' : 'rgba(90,100,115,0.1)';
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(x + dx * moonR, y + dy * moonR, cr * moonR, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(x - moonR, yy);
+      ctx.lineTo(x + moonR, yy);
+      ctx.stroke();
     }
+    ctx.restore();
   }
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   return tex;
+}
+
+function drawSparkle(ctx: CanvasRenderingContext2D, x: number, y: number, s: number): void {
+  const w = s * 0.24;
+  ctx.fillStyle = 'rgba(226,235,248,0.95)';
+  ctx.beginPath();
+  ctx.moveTo(x, y - s);
+  ctx.quadraticCurveTo(x + w * 0.4, y - w * 0.4, x + s, y);
+  ctx.quadraticCurveTo(x + w * 0.4, y + w * 0.4, x, y + s);
+  ctx.quadraticCurveTo(x - w * 0.4, y + w * 0.4, x - s, y);
+  ctx.quadraticCurveTo(x - w * 0.4, y - w * 0.4, x, y - s);
+  ctx.closePath();
+  ctx.fill();
 }
 
 /** White date plate showing a single number; redrawable in place. */
