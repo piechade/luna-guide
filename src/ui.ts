@@ -89,6 +89,7 @@ export class Wizard {
     this.kickerEl.textContent = step.kicker;
     this.titleEl.textContent = step.title;
     this.bodyEl.innerHTML = step.body(this.ctx);
+    this.bodyEl.scrollTop = 0; // mobile: step text is its own scroll container
     this.prevBtn.disabled = i === 0;
     this.nextBtn.textContent = i === STEPS.length - 1 ? 'Fertig ✓' : 'Weiter →';
     this.nextBtn.disabled = i === STEPS.length - 1;
