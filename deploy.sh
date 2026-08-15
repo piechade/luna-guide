@@ -21,8 +21,12 @@ echo "==> Rebuild container"
 ssh "${SSH_TARGET}" "cd ${REMOTE_PATH} && docker compose up -d --build"
 
 echo "==> Verify"
-sleep 3
-code=$(curl -s -o /dev/null -w '%{http_code}' "${SITE}/")
-echo "GET ${SITE}/ -> ${code}"
-[ "${code}" = "200" ] || { echo "Deployment verification failed"; exit 1; }
-echo "OK"
+# Traefik can take a few seconds to re-register the recreated container.
+for i in $(seq 1 10); do
+  sleep 3
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${SITE}/")
+  echo "GET ${SITE}/ -> ${code} (attempt ${i})"
+  [ "${code}" = "200" ] && { echo "OK"; exit 0; }
+done
+echo "Deployment verification failed"
+exit 1
