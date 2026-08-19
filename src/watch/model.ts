@@ -107,9 +107,18 @@ export class WatchModel {
     dial.renderOrder = 1; // danger sector (2) and crystal (3) must blend on top
     this.group.add(dial);
 
-    // Rehaut (chapter ring wall between dial and crystal)
-    const rehaut = new THREE.Mesh(new THREE.CylinderGeometry(16.4, 16.2, 1.4, 96, 1, true), steelBrushed);
-    rehaut.position.y = DIAL_Y + 0.6;
+    // Rehaut (chapter ring wall between dial rim and case lip). It is only ever
+    // seen from the INSIDE, so it needs DoubleSide: a front-side-only cylinder
+    // is back-face culled here and the near-black disc mask shows through as a
+    // dark gap around the dial. Its bottom tucks under the dial rim and its top
+    // meets the case's inner lip (16.7 @ y 3.7), so no slot is left at either end.
+    const rehautMat = steelBrushed.clone();
+    rehautMat.side = THREE.DoubleSide;
+    const rehaut = new THREE.Mesh(
+      new THREE.CylinderGeometry(16.66, DIAL_R - 0.15, 1.68, 128, 1, true),
+      rehautMat,
+    );
+    rehaut.position.y = DIAL_Y + 0.59; // spans y 2.0 … 3.68
     this.group.add(rehaut);
 
     // --- Moon disc behind the dial ---
@@ -128,14 +137,16 @@ export class WatchModel {
     this.moonDisc.position.set(0, DIAL_Y - 0.45, MOON_DISC_CENTER_Z);
     this.group.add(this.moonDisc);
 
-    // Opaque annulus just under the dial rim: clips any moon-disc overflow
-    // that would otherwise peek through the dial/rehaut gap.
+    // Opaque annulus just under the dial rim: clips any moon-disc overflow that
+    // would otherwise peek through the dial/rehaut gap. It sits close under the
+    // dial and carries the dial's own edge blue, so the sliver of it visible
+    // beneath the rim reads as the dial's edge instead of a black crack.
     const discMask = new THREE.Mesh(
       new THREE.RingGeometry(DIAL_R - 0.4, DIAL_R + 0.7, 96),
-      new THREE.MeshBasicMaterial({ color: 0x060b18 }),
+      new THREE.MeshBasicMaterial({ color: 0x123663 }),
     );
     discMask.rotation.x = -Math.PI / 2;
-    discMask.position.y = DIAL_Y - 0.32;
+    discMask.position.y = DIAL_Y - 0.18;
     this.group.add(discMask);
 
     // --- Date plate behind the window at 3 ---
