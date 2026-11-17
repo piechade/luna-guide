@@ -1,95 +1,198 @@
-import type { CameraPose } from './scene';
-import { Timeline, easeOut, linear } from './animator';
-import { SYNODIC_MONTH, type MoonState } from './moon';
+import { STEP_VIEWS, type CameraPose } from './views';
+import { Timeline, easeInOut, easeOut, linear, type Ease } from './animator';
+import { calendarDaysBetween, daysSinceFullMoonDate, fullMoonOnOrBefore, type MoonState } from './moon';
+import { minuteOfDay, parkTarget, timeSetting, timeTarget, type Plan, type Scenario } from './plan';
+import { DATE_POSITIONS, DAY, HALF_DAY, mod, nextMidnight, passes } from './watch/mechanism';
 import type { WatchModel } from './watch/model';
 
-// Crown directions per the official SW280-1 manual (Mühle Teutonia IV Mondphase,
-// same caliber family as the Tudor T607-9):
+// Crown directions per Mühle's manual for the SW280-1 (Teutonia IV Mondphase,
+// the calibre the T607-9 is based on); Sellita's and Tudor's documents name the
+// functions but no directions:
 //   unscrew           -> towards 6 o'clock  (counterclockwise)
 //   wind (pos. 1)     -> towards 12 o'clock (clockwise)
 //   date (pos. 2)     -> towards 12 o'clock (clockwise)
 //   moon (pos. 2)     -> towards 6 o'clock  (counterclockwise), 1-day steps
+//   hands (pos. 3)    -> towards 6 o'clock moves them forward (SW200 keyless works)
 //
-// Step order: all quick-set corrections (date AND moon) happen while the watch
-// is parked at 6:30 AM — established by turning the hands forward past the date
-// flip (= midnight), so AM/PM is known. The quick-set lock-out (20:00–03:00)
-// depends on the WATCH's own calendar-wheel position, not on the wall clock, so
-// parking at 6:30 makes the corrections safe at any real time of day. The exact
-// time is set LAST; from 6:30 AM forward the hands only ever cross noon (which
-// switches nothing). Only if the real time is between 0:00 and 6:30 does the
-// final time-set pass midnight once more — then date and moon are each set one
-// step short beforehand, and the midnight pass carries them to the final value.
+// The crown direction that moves the hands forward is not documented by any of
+// the three; it follows from the SW200 keyless works and is shown, not instructed.
+//
+// The watch may have stopped at any point of the day, and a twelve-hour dial
+// does not show in which half. The procedure (see plan.ts) never assumes it:
+// the hands are parked on the five, where quick corrections are safe in either
+// half; date and moon are set one day short; and the time is set by turning
+// forward until the date jumps to today. That jump is the movement's midnight,
+// so from there the half of the day is known.
+//
+// Nothing here writes a date or a moon position directly. Every step moves the
+// hands or clicks the quick-set on `watch.mech`, and the calendar follows from
+// the mechanism — in the animation and when a later step is opened directly.
 
-export interface StepCtx {
-  watch: WatchModel;
+/** What the instructions depend on. Needs no 3D model, so the text guide can be shown without one. */
+export interface TextCtx {
+  /** Wall-clock snapshot taken when the step was opened; text, entry state and animation share it. */
+  now: Date;
   moon: MoonState;
-  today: Date;
+  /** What the calendar is set to. Decided once per run, when the calendar steps are reached. */
+  plan: Plan;
+}
+
+export interface StepCtx extends TextCtx {
+  watch: WatchModel;
+  /** The stopped watch this run of the guide starts from. */
+  scenario: Scenario;
+  /** Receives short captions for events in the animation (noon passed, date jumped …). */
+  caption?: (text: string) => void;
 }
 
 export interface Step {
   kicker: string;
   title: string;
-  body(ctx: StepCtx): string;
   camera: CameraPose;
-  /** Snap the watch to this step's deterministic entry state. */
-  setup(ctx: StepCtx): void;
-  /** Build the step's animation timeline (assumes setup() ran). */
+  /** Instructions for the real watch. */
+  body(ctx: TextCtx): string;
+  /** What the model shows in this run; only rendered next to the 3D model. */
+  sim?(ctx: StepCtx): string;
+  /** The finished step's effect on the watch, applied at once (to open later steps). */
+  apply(ctx: StepCtx): void;
+  /** The step's animation, starting from the state the previous steps left. */
   build(ctx: StepCtx): Timeline;
 }
 
-const START_TIME = 10 * 60 + 9; // watch found stopped at 10:09
-const SAFE_TIME = 6 * 60 + 30; // 6:30 AM — safely outside the lock-out window
-const MOON_START_OFFSET = 6; // demo: moon starts 6 days behind its target pose
+/** Index of the first step that depends on the plan (date, moon, time, final check). */
+export const CALENDAR_STEP = 3;
+/** Crown rotation per hour of forward hand travel: one turn towards six o'clock. */
+const HAND_SETTING_SPIN = Math.PI * 2;
+/** Duration of one quick-set click (one crown turn); the clicks of a step follow each other at least this far apart. */
+const CLICK_SECONDS = 0.2;
+
+const WIND_TURNS = 27;
 
 const fmtDate = (d: Date) =>
   d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const fmtDay = (d: Date) => d.toLocaleDateString('de-DE', { day: 'numeric', month: 'long' });
+const two = (n: number) => String(n).padStart(2, '0');
+/** The movement's own time on a 24-hour scale. */
+export const clock24 = (minuteOfDay: number): string =>
+  `${two(Math.floor(minuteOfDay / 60) % 24)}:${two(Math.floor(minuteOfDay % 60))}`;
+/** What the twelve-hour dial shows for it. */
+export const dialTime = (minuteOfDay: number): string =>
+  `${Math.floor((minuteOfDay % HALF_DAY) / 60) || 12}:${two(Math.floor(minuteOfDay % 60))}`;
+export function dayPart(minuteOfDay: number): string {
+  const hour = Math.floor(minuteOfDay / 60) % 24;
+  if (hour < 5) return 'nachts';
+  if (hour < 10) return 'morgens';
+  if (hour < 12) return 'vormittags';
+  if (hour < 14) return 'mittags';
+  if (hour < 18) return 'nachmittags';
+  if (hour < 22) return 'abends';
+  return 'nachts';
+}
+/** A point on the movement's time axis as a time of day. */
+const timeOfDay = (minutes: number): number => ((minutes % 1440) + 1440) % 1440;
+const clicks = (n: number) => `${n} Klick${n === 1 ? '' : 's'}`;
+const days = (n: number) => `${n} Tag${n === 1 ? '' : 'e'}`;
 
-function dayShift(today: Date, shift: number): number {
-  const d = new Date(today);
-  d.setDate(d.getDate() + shift);
-  return d.getDate();
+/** Longer turns take longer, but never tediously long. */
+const sweepSeconds = (minutes: number) => Math.min(7.5, Math.max(2.6, 2.2 + Math.abs(minutes) / 60 * 0.26));
+
+interface SweepEvents { noon?: () => void; switched?: () => void }
+
+/** Turn the hands by the crown to `target` (movement time). The calendar follows by itself. */
+function sweep(tl: Timeline, at: number, dur: number, ctx: StepCtx, target: number, ease: Ease = easeInOut, events: SweepEvents = {}): void {
+  const { watch } = ctx;
+  let from = NaN;
+  let spin = 0;
+  tl.tween(at, dur, v => {
+    if (Number.isNaN(from)) { from = watch.mech.minutes; spin = watch.crownSpin; }
+    const before = watch.mech.minutes;
+    const next = v >= 1 ? target : from + (target - from) * v;
+    const switched = watch.mech.turnTo(next);
+    watch.crownSpin = spin + (next - from) / 60 * HAND_SETTING_SPIN;
+    if (events.noon && passes(before, next, HALF_DAY)) events.noon();
+    if (switched && events.switched) events.switched();
+  }, ease);
 }
 
-/** Moon-disc pose the watch should finally show (days past full-moon pose). */
-function moonTarget(moon: MoonState): number {
-  return moon.daysSinceFullMoon;
+/** One quick-set click: a full turn of the crown, as in the explore mode; the corrector meets the date
+ * tab or the day corrector meets the star half-way through, when the mechanism advances. */
+function click(tl: Timeline, at: number, watch: WatchModel, direction: 1 | -1, effect: () => void): void {
+  let base = NaN;
+  tl.tween(at, CLICK_SECONDS, v => {
+    if (Number.isNaN(base)) base = watch.crownSpin;
+    watch.crownSpin = base + direction * Math.PI * 2 * v;
+  }, linear);
+  tl.call(at + CLICK_SECONDS / 2, effect);
 }
 
-/**
- * True while the real time is between 0:00 and 6:30. Then the final time-set
- * (step 6) has to sweep the hands from the parked 6:30 AM past midnight once
- * more, advancing date and moon disc by one — so both are set one step short
- * in steps 4 and 5.
- */
-function extraMidnightPass(now: Date = new Date()): boolean {
-  return now.getHours() * 60 + now.getMinutes() < SAFE_TIME;
+/** Put the watch into the state in which `index` begins: the stopped watch plus all earlier steps. */
+export function enterStep(ctx: StepCtx, index: number): void {
+  const { watch } = ctx;
+  watch.releaseClock();
+  watch.running = false;
+  watch.crownPull = 0;
+  watch.crownSpin = 0;
+  watch.zone = 0;
+  watch.displaySeconds = 34;
+  watch.mech.set(ctx.scenario);
+  for (let i = 0; i < index; i++) STEPS[i].apply(ctx);
+  watch.snap();
 }
+
+
+const ring = (position: number): number => mod(position - 1, DATE_POSITIONS) + 1;
+const addDays = (day: Date, n: number): Date => new Date(day.getFullYear(), day.getMonth(), day.getDate() + n);
+/** The day the watch is being set to: the one after the day the calendar is quick-set to. */
+const settingDay = (plan: Plan): Date => addDays(plan.parkDay, 1);
+/** What the date window shows after the first midnight pass. */
+const firstJump = (plan: Plan): number => ring(plan.parkDate + 1);
+
+function moonLine(plan: Plan): string {
+  const n = plan.moonClicksAtPark;
+  const fullMoon = fmtDay(fullMoonOnOrBefore(plan.parkDay));
+  const count = n > 0
+    ? `Dann <span class="hl">${clicks(n)} weiter</span> – einen für jeden Tag vom letzten Vollmond am
+       <b>${fullMoon}</b> bis zum <b>${fmtDay(plan.parkDay)}</b> (${days(n)}).`
+    : `Am ${fullMoon} war Vollmond: bei der Vollmond-Stellung <b>stehen bleiben</b>, keine weiteren Klicks.`;
+  return `${count} Der <b>${n + 1}. Tag</b> – der ${fmtDay(settingDay(plan))} – kommt in Schritt 6 von selbst
+    dazu, wenn die Zeiger über Mitternacht laufen.`;
+}
+
+/** The maker's manual counts straight to the day being set; say that it ends where this guide does. */
+function moonDirectNote(plan: Plan): string {
+  const target = settingDay(plan);
+  const direct = daysSinceFullMoonDate(target);
+  if (direct === 0) return ''; // full moon on that day: the maker just centres a moon, see the note below
+  return ` Die Herstelleranleitung zählt direkt bis zum ${fmtDay(target)}, also ${clicks(direct)} – nach
+    Schritt 6 steht die Scheibe hier genauso. Nur nicht mischen: ${clicks(direct)} <b>und</b> danach Schritt 6
+    stellen den Mond einen Tag zu weit.`;
+}
+
+const PARKED_NOTE = `<div class="okbox"><b>Voraussetzung:</b> Die Uhr zeigt etwa 5 Uhr (Schritt 3) – dort ist
+  die Schnellkorrektur in beiden Tageshälften gefahrlos. Das Werk läuft weiter, also zügig stellen: Steht
+  der Stundenzeiger schon hinter der 7, zurück zu Schritt 3.</div>`;
 
 export const STEPS: Step[] = [
   // ------------------------------------------------------------- 1
   {
     kicker: 'Schritt 1 · Vorbereitung',
     title: 'Krone aufschrauben',
-    camera: { pos: [42, 21, 9], target: [21.5, 0, 0] },
+    camera: STEP_VIEWS.crown,
     body: () => `
-      <p>Die Krone der 1926 Luna ist <span class="hl">verschraubt</span> — sie dichtet das
-      Gehäuse bis <b>100 m</b> ab. Drehe sie <b>gegen den Uhrzeigersinn (Richtung 6 Uhr)</b>,
-      bis sich das Gewinde löst und die Krone mit einem kleinen Sprung in
-      <code>Position 1</code> (Aufzugsstellung) springt.</p>
-      <div class="warnbox">⚠️ Solange die Krone offen ist, ist die Uhr <b>nicht</b> wasserdicht.
-      Niemals mit geöffneter Krone ans Wasser — und am Ende immer wieder festschrauben
-      (Schritt 7).</div>`,
-    setup: ({ watch, moon, today }) => {
-      watch.crownPull = 0;
-      watch.crownSpin = 0;
-      watch.running = false;
-      watch.liveSync = false;
-      watch.displayMinutes = START_TIME;
-      watch.displaySeconds = 34;
-      watch.dangerOpacity = 0;
-      watch.moonDays = moonTarget(moon) - MOON_START_OFFSET;
-      watch.setDate(dayShift(today, -3));
-    },
+      <p>Die Krone ist <span class="hl">verschraubt</span> – sie dichtet das Gehäuse bis <b>100 m</b> ab.
+      Drehe sie <b>gegen den Uhrzeigersinn (Richtung 6 Uhr)</b>, bis sich das Gewinde löst und die Krone in
+      <code>Position 1</code> (Aufzug) herausfedert.</p>
+      <p>Von dort lässt sie sich zwei Rasten herausziehen: <code>Position 2</code> (erste Raste) stellt Datum
+      und Mond, <code>Position 3</code> (ganz herausgezogen) die Zeiger. „Richtung 12 Uhr“ heißt in dieser
+      Anleitung: Die Oberseite der Krone wandert zur 12 hin; „Richtung 6 Uhr“ ist die Gegenrichtung.</p>
+      <div class="warnbox"><b>Achtung:</b> Solange die Krone offen ist, ist die Uhr <b>nicht</b> wasserdicht.
+      Nie mit geöffneter Krone ans Wasser – und am Ende immer wieder festschrauben (Schritt 7).</div>`,
+    sim: ({ scenario }) => `
+      Die Uhr im Modell ist vor einigen Tagen stehen geblieben: Das Zifferblatt zeigt
+      <b>${dialTime(scenario.minuteOfDay)} Uhr</b>. Ob das in der ersten oder zweiten Tageshälfte war, zeigt
+      ein Zwölf-Stunden-Zifferblatt nicht – nur die 24-Stunden-Anzeige am Modell verrät es.
+      <button type="button" class="text-button" data-action="reroll">Anderen Stillstand würfeln</button>`,
+    apply: ({ watch }) => { watch.crownPull = 1; },
     build: ({ watch }) => {
       const tl = new Timeline();
       tl.tween(0.6, 2.6, (v) => (watch.crownSpin = v * Math.PI * 8)); // unscrew CCW (towards 6)
@@ -99,23 +202,19 @@ export const STEPS: Step[] = [
   },
   // ------------------------------------------------------------- 2
   {
-    kicker: 'Schritt 2 · Standard-Routine: erst aufziehen',
-    title: 'Handaufzug — ca. 27 Umdrehungen',
-    camera: { pos: [38, 24, 19], target: [19, 0, 0] },
+    kicker: 'Schritt 2 · Erst aufziehen',
+    title: 'Die Uhr von Hand aufziehen',
+    camera: STEP_VIEWS.crown,
     body: () => `
-      <p>Eine stehende Automatik wird <b>zuerst von Hand vollgezogen</b>: in
-      <code>Position 1</code> die Krone <b>im Uhrzeigersinn (Richtung 12 Uhr)</b> drehen —
-      laut Sellita-Werksdokumentation braucht das Kaliber aus dem Stand
-      <span class="hl">mindestens 27 Umdrehungen</span> bis zum Vollaufzug
-      (Gangreserve ca. 38 h).</p>
-      <p style="font-size:1.4rem; font-variant-numeric: tabular-nums;">
-        🔄 <b><span id="wind-count">0</span> / 27</b> Umdrehungen</p>
-      <div class="okbox">✅ Überdrehen unmöglich: Die Rutschkupplung des Automatikwerks
-      schützt die Zugfeder. Nach wenigen Umdrehungen springt der Sekundenzeiger an.</div>`,
-    setup: (ctx) => {
-      STEPS[0].setup(ctx);
-      ctx.watch.crownPull = 1;
-    },
+      <p>Eine stehende Automatik wird <b>zuerst von Hand aufgezogen</b>: in <code>Position 1</code> die Krone
+      <b>im Uhrzeigersinn (Richtung 12 Uhr)</b> drehen – ruhig und ohne Kraft, etwa eine Umdrehung pro
+      Sekunde. <span class="hl">Rund ${WIND_TURNS} Umdrehungen</span> genügen als Richtwert; maßgeblich ist
+      die Herstelleranleitung.</p>
+      <div class="okbox">Die Rutschkupplung schützt die Zugfeder vor dem Überdrehen. Sobald das Werk läuft,
+      bewegt sich der Sekundenzeiger. Die Gangreserve der Referenzuhr beträgt laut Hersteller etwa
+      38 Stunden.</div>`,
+    sim: () => `<span class="counter"><b><span id="wind-count">0</span> / ${WIND_TURNS}</b> Umdrehungen</span>`,
+    apply: ({ watch }) => { watch.running = true; },
     build: ({ watch }) => {
       const tl = new Timeline();
       const counter = () => document.getElementById('wind-count');
@@ -123,9 +222,10 @@ export const STEPS: Step[] = [
         0.8,
         6.0,
         (v) => {
-          watch.crownSpin = -v * 27 * Math.PI * 2; // clockwise (towards 12)
+          watch.crownSpin = -v * WIND_TURNS * Math.PI * 2; // clockwise (towards 12)
           const el = counter();
-          if (el) el.textContent = String(Math.floor(v * 27));
+          const count = String(Math.floor(v * WIND_TURNS));
+          if (el && el.textContent !== count) el.textContent = count;
         },
         linear,
       );
@@ -135,230 +235,305 @@ export const STEPS: Step[] = [
   },
   // ------------------------------------------------------------- 3
   {
-    kicker: 'Schritt 3 · Sicherheit',
-    title: 'Mitternacht finden & auf 6:30 Uhr parken',
-    camera: { pos: [0, 48, 13], target: [0, 0, 1] },
+    kicker: 'Schritt 3 · Sichere Stellung',
+    title: 'Zeiger auf 5 Uhr stellen',
+    camera: STEP_VIEWS.dial,
     body: () => `
-      <p>Zwischen ca. <b>20:00 und 03:00 Uhr</b> (rot markiert) greift das Kalender­räderwerk
-      in die Datums- und Mondscheibe ein. <span class="hl">Schnellkorrekturen in diesem
-      Fenster können das Werk beschädigen.</span> Entscheidend ist dabei die Zeit, auf der
-      die <b>Uhr selbst</b> steht — nicht die echte Uhrzeit.</p>
-      <p>Deshalb: Krone ganz heraus in <code>Position 3</code> ziehen und die Zeiger
-      <b>vorwärts</b> drehen, bis das <b>Datum springt</b> — dieser Sprung ist
-      <b>Mitternacht</b>, jetzt ist die Tageshälfte (AM/PM) sicher bekannt. Dann weiter bis
-      <b>6:30 Uhr morgens</b> drehen und dort parken.</p>
-      <p class="muted">Springt das Datum beim ersten 12-Uhr-Durchgang nicht, war das nur
-      die Mittagsposition — einfach weiterdrehen bis zum Sprung. Auf 6:30 Uhr geparkt sind
-      alle Schnellkorrekturen der nächsten Schritte <b>zu jeder echten Tageszeit</b>
-      gefahrlos möglich.</p>`,
-    setup: (ctx) => {
-      STEPS[1].setup(ctx);
-      ctx.watch.crownSpin = 0;
-      ctx.watch.running = true;
-      ctx.watch.displayMinutes = START_TIME + 1.5;
+      <p>Die Uhr kann zu <b>jeder Tageszeit</b> stehen geblieben sein – und das Zifferblatt zeigt nicht, in
+      welcher Tageshälfte. Zwischen ca. <b>20 und 4 Uhr</b> schaltet das Kalenderwerk Datum und Mondscheibe
+      weiter; <span class="hl">eine Schnellkorrektur in diesem Fenster kann das Werk beschädigen.</span>
+      Deshalb zuerst in eine Stellung, die in <b>beiden</b> Tageshälften sicher ist:</p>
+      <ol>
+        <li>Krone ganz heraus in <code>Position 3</code> ziehen – der Sekundenzeiger stoppt.</li>
+        <li>Die Krone so drehen, dass die Zeiger <b>vorwärts</b> laufen (rechtsherum über das Zifferblatt),
+        bis die Uhr <b>5:00 Uhr</b> zeigt. Laufen sie rückwärts, die Krone andersherum drehen. Eine
+        Viertelstunde davor oder danach schadet nicht.</li>
+        <li>Die Krone eine Raste hineindrücken, in <code>Position 2</code> – gerade drücken, nicht drehen.</li>
+      </ol>
+      <div class="okbox">5 Uhr morgens und 5 Uhr nachmittags liegen <b>beide</b> außerhalb des
+      Schaltfensters, und der Stundenzeiger verdeckt dort das Mondfenster nicht. In welcher Tageshälfte das
+      Werk steht, musst du hier noch nicht wissen – das klärt sich in Schritt 6 von selbst.</div>
+      <p class="muted">Springt beim Drehen das Datum, war das die Mitternacht des Werks; für diesen Schritt
+      spielt es keine Rolle. Für diese Uhr nennt der Hersteller kein Schaltfenster. Für die Kaliberfamilie
+      werden 20–2, 21–3 und 20–4 Uhr genannt; diese Anleitung meidet das größte.</p>`,
+    sim: ({ watch, scenario }) => {
+      const stopped = `<b>${clock24(scenario.minuteOfDay)} Uhr</b> (${dayPart(scenario.minuteOfDay)})`;
+      const parked = timeOfDay(parkTarget(watch.mech));
+      const other = clock24(timeOfDay(scenario.minuteOfDay + HALF_DAY));
+      return `Hier blieb das Werk um ${stopped} stehen. Auf der 5 steht es dann um
+        <b>${clock24(parked)} Uhr</b> – am Zifferblatt ist nicht zu sehen, ob morgens oder nachmittags.
+        Das Schaltfenster ist am Modell farbig markiert.
+        <button type="button" class="text-button" data-action="other-half">Stillstand um ${other} Uhr zeigen</button>`;
     },
-    build: ({ watch, moon, today }) => {
+    apply: ({ watch }) => {
+      watch.mech.turnTo(parkTarget(watch.mech));
+      watch.crownPull = 2;
+      watch.running = true; // pos. 2: the movement keeps running
+      watch.zone = 1;
+    },
+    build: (ctx) => {
+      const { watch } = ctx;
       const tl = new Timeline();
-      const from = START_TIME + 1.5;
-      const flipAt = 720; // first 12-o'clock pass — shown as the midnight flip
-      const parkAt = 720 + SAFE_TIME; // continue to 6:30 AM
-      let flipped = false;
-      const setMin = (v: number) => {
-        if (!flipped && v >= flipAt) {
-          flipped = true;
-          watch.setDate(dayShift(today, -2)); // date jumps — that was midnight
-          watch.moonDays = moonTarget(moon) - MOON_START_OFFSET + 1; // moon disc advances too
-        }
-        watch.displayMinutes = v;
-      };
+      const park = parkTarget(watch.mech);
+      const turning = park > watch.mech.minutes ? sweepSeconds(park - watch.mech.minutes) : 0;
       tl.tween(0.6, 0.9, (v) => (watch.crownPull = 1 + v * 2), easeOut); // to pos. 3
       tl.call(1.5, () => (watch.running = false)); // stop-second
-      tl.tween(1.2, 1.2, (v) => (watch.dangerOpacity = v * 0.55));
-      tl.tween(2.8, 3.4, (v) => setMin(from + v * (parkAt - from)));
-      tl.tween(6.6, 0.8, (v) => (watch.crownPull = 3 - v), easeOut); // back to pos. 2
-      tl.tween(7.4, 0.8, (v) => (watch.dangerOpacity = 0.55 - v * 0.35));
+      tl.tween(1.2, 1.2, (v) => (watch.zone = v));
+      const events: SweepEvents = {
+        switched: () => ctx.caption?.('Das Datum springt: Hier war die Mitternacht des Werks. Weiter bis zur 5.'),
+      };
+      if (turning) sweep(tl, 2.8, turning, ctx, park, easeInOut, events);
+      const parked = 2.8 + turning;
+      tl.call(parked, () => ctx.caption?.('Zeiger auf 5 Uhr: sicher, ob morgens oder nachmittags.'));
+      tl.tween(parked + 0.4, 0.8, (v) => (watch.crownPull = 3 - v), easeOut); // back to pos. 2
+      tl.call(parked + 1.2, () => (watch.running = true));
       return tl;
     },
   },
   // ------------------------------------------------------------- 4
   {
     kicker: 'Schritt 4 · Kalender',
-    title: 'Datum stellen',
-    camera: { pos: [26, 22, 13], target: [12.5, 1, 0] },
-    body: ({ today }) => {
-      const edge = extraMidnightPass();
-      const dateLine = edge
-        ? `<p>Sonderfall: Es ist gerade zwischen <b>0:00 und 6:30 Uhr</b>. Beim Zeitstellen
-           (Schritt 6) laufen die Zeiger deshalb noch einmal über Mitternacht — das Datum
-           schaltet dabei einen Tag weiter. Stelle es darum auf
-           <span class="hl">gestern (${dayShift(today, -1)}.)</span>; der Mitternachts-Durchgang
-           bringt es dann automatisch auf <b>heute (${today.getDate()}.)</b>.</p>`
-        : `<p>Stelle es auf <span class="hl">heute (${today.getDate()}.)</span>. Die
-           Tageshälfte stimmt bereits — das hat der Datumssprung in Schritt 3 sichergestellt —
-           und beim Zeitstellen in Schritt 6 laufen die Zeiger höchstens über die
-           <b>Mittags</b>-Zwölf, dabei schaltet nichts.</p>`;
+    title: 'Datum eine Zahl vor heute stellen',
+    camera: STEP_VIEWS.date,
+    body: ({ now, plan }) => {
+      const target = settingDay(plan);
+      const first = firstJump(plan);
+      const ringNote = plan.parkDate > first
+        ? ` Die Datumsscheibe hat immer 31 Positionen – vor der 1 steht die 31, auch wenn der Vormonat
+           kürzer war.`
+        : '';
+      // The numbers belong to the day the plan was made for, which near midnight is not the day on the wall.
+      const ahead = calendarDaysBetween(now, target);
+      const which = ahead === 0
+        ? `Stelle <b>die Zahl vor dem heutigen Datum</b> ein: <span class="hl">die ${plan.parkDate}</span>.`
+        : ahead > 0
+          ? `Gleich ist Mitternacht – die Uhr wird schon auf den ${fmtDay(target)} gestellt. Stelle die Zahl
+             davor ein: <span class="hl">die ${plan.parkDate}</span>.`
+          : `Eingestellt wird <span class="hl">die ${plan.parkDate}</span>, die Zahl vor dem ${fmtDay(target)};
+             den Tageswechsel seither rechnet Schritt 6 ein.`;
       return `
-      <p>In <code>Position 2</code> die Krone <b>im Uhrzeigersinn (Richtung 12 Uhr)</b>
-      drehen: Jetzt springt das Datum im Fenster bei 3 Uhr — jede Raste ein Tag.</p>
-      ${dateLine}
-      <div class="okbox">✅ Die Uhr steht auf 6:30 Uhr morgens — weit außerhalb der
-      Sperrzone. Die Schnellkorrektur ist deshalb jetzt gefahrlos, egal wie spät es
-      wirklich ist.</div>`;
+      ${PARKED_NOTE}
+      <p>${which}${ringNote}</p>
+      <p>Dazu in <code>Position 2</code> die Krone <b>im Uhrzeigersinn (Richtung 12 Uhr)</b> drehen: Das
+      Datum im Fenster bei 3 Uhr springt – jeder Klick ein Tag, immer vorwärts. Springt nichts, steht die
+      Krone noch in Position 1: eine Raste herausziehen.</p>
+      <p><b>Warum eine Zahl zu wenig?</b> Der Weg zur richtigen Uhrzeit führt in Schritt 6 einmal über
+      Mitternacht. Dabei schaltet die Uhr selbst auf die <b>${first}</b> weiter – und dieser Sprung beweist
+      zugleich, in welcher Tageshälfte das Werk steht.</p>`;
     },
-    setup: (ctx) => {
-      STEPS[2].setup(ctx);
-      ctx.watch.running = true; // pos. 2: the movement keeps running
-      ctx.watch.displayMinutes = 720 + SAFE_TIME;
-      ctx.watch.crownPull = 2;
-      ctx.watch.dangerOpacity = 0.2;
-      ctx.watch.moonDays = moonTarget(ctx.moon) - MOON_START_OFFSET + 1;
-      ctx.watch.setDate(dayShift(ctx.today, -2));
+    sim: ({ watch, plan }) => {
+      const n = watch.mech.clicksToDate(plan.parkDate);
+      return n
+        ? `Hier zeigt das Fenster die <b>${watch.mech.date}</b> – ${clicks(n)} bis zur ${plan.parkDate}.`
+        : `Hier steht das Datum bereits auf der ${plan.parkDate}.`;
     },
-    build: ({ watch, today }) => {
+    apply: ({ watch, plan }) => {
+      for (let n = watch.mech.clicksToDate(plan.parkDate); n > 0; n--) watch.mech.quickDate();
+    },
+    build: (ctx) => {
+      const { watch, plan } = ctx;
       const tl = new Timeline();
-      const finalShift = extraMidnightPass() ? -1 : 0; // edge case: park on yesterday
-      tl.call(1.4, () => {
-        watch.setDate(dayShift(today, -1));
-        watch.crownSpin -= 0.5; // clockwise click (towards 12)
-      });
-      if (finalShift === 0) {
-        tl.call(2.6, () => {
-          watch.setDate(today.getDate());
-          watch.crownSpin -= 0.5;
-        });
-      }
+      const n = watch.mech.clicksToDate(plan.parkDate);
+      const gap = n > 6 ? 0.28 : 0.6;
+      for (let i = 0; i < n; i++) click(tl, 1.3 + i * gap, watch, -1, () => watch.mech.quickDate()); // towards 12
+      tl.call(1.3 + n * gap + 0.3, () => ctx.caption?.(n
+        ? `Das Datum steht auf ${watch.mech.date} – eine Zahl vor heute.`
+        : `Das Datum steht bereits auf ${watch.mech.date} – eine Zahl vor heute.`));
       return tl;
     },
   },
   // ------------------------------------------------------------- 5
   {
     kicker: 'Schritt 5 · Kalender',
-    title: 'Mondphase einstellen',
-    camera: { pos: [0, 24, 32], target: [0, 1, 8] },
-    body: ({ moon }) => {
-      const edge = extraMidnightPass();
-      const n = edge ? (moon.clicksFromFullMoon + 29) % 30 : moon.clicksFromFullMoon;
-      const clickLine =
-        n === 0
-          ? edge
-            ? `Bei der Vollmond-Referenz <b>stehen bleiben</b> — den letzten Tag schaltet
-               der Mitternachts-Durchgang beim Zeitstellen (Schritt 6) automatisch nach.`
-            : `Heute steht der Mond <b>exakt auf Vollmond</b> — die Vollmond-Position ist
-               bereits das Ziel, keine weiteren Klicks nötig.`
-          : `Dann <span class="hl">${n} Klick${n === 1 ? '' : 's'} weiter</span> —
-             ein Klick = ein Tag. Die Schaltung kennt nur <b>vorwärts</b>; verpasst du die
-             Position, einmal ganz herum.`;
-      const edgeNote = edge
-        ? `<div class="warnbox">🌙 Sonderfall 0:00–6:30 Uhr: Beim Zeitstellen (Schritt 6)
-           schaltet der Mitternachts-Durchgang die Mondscheibe noch <b>einen Tag weiter</b> —
-           die Klickzahl oben ist deshalb bereits um eins reduziert.</div>`
-        : '';
+    title: 'Mondphase einen Tag zurück stellen',
+    camera: STEP_VIEWS.moon,
+    body: ({ moon, plan }) => {
+      const target = settingDay(plan);
+      const moonNote = daysSinceFullMoonDate(target) === 0
+        ? `Am ${fmtDay(target)} ist Vollmond. Gezählt wird trotzdem vom Vollmond davor – nach dem
+           Mitternachts-Durchgang in Schritt 6 steht dann wieder ein Mond mittig.`
+        : `Heute: <b>${moon.name}</b>, ${(moon.illumination * 100).toFixed(0)} % beleuchtet · nächster
+           Vollmond am ${fmtDay(moon.nextFullMoon)}.`;
       return `
-      <p>Krone bleibt in <code>Position 2</code>, jetzt <b>gegen den Uhrzeigersinn
-      (Richtung 6 Uhr)</b> drehen:</p>
+      ${PARKED_NOTE}
+      <p>Die Krone bleibt in <code>Position 2</code>. Jetzt <b>gegen den Uhrzeigersinn (Richtung 6 Uhr)</b>
+      drehen – jeder Klick schaltet die Mondscheibe einen Tag weiter:</p>
       <ol>
-        <li>Scheibe weiterschalten, bis der goldene Mond <b>exakt mittig</b> in der runden
-        Öffnung bei 6 Uhr steht → das ist die <b>Vollmond-Referenz</b>.</li>
-        <li>${clickLine}</li>
+        <li>Weiterschalten, bis ein Mond <b>möglichst mittig</b> im Mondfenster bei 6 Uhr steht, frei
+        zwischen den beiden Wolken – das ist die <b>Vollmond-Stellung</b>.</li>
+        <li>${moonLine(plan)}</li>
       </ol>
-      ${edgeNote}
-      <div class="okbox">✅ Keine Wartezeit nötig: Die Uhr steht weiterhin auf 6:30 Uhr
-      morgens, also außerhalb der Sperrzone (20:00–03:00 Uhr der <b>Uhrzeit auf dem
-      Zifferblatt</b>) — die Mondkorrektur ist zu jeder echten Tageszeit gefahrlos.</div>
-      <div class="okbox">🌙 Aktuell: <b>${moon.name}</b>, ${(moon.illumination * 100).toFixed(0)} %
-      beleuchtet · letzter Vollmond: <b>${fmtDate(moon.lastFullMoon)}</b>
-      (vor ${moon.daysSinceFullMoon.toFixed(1)} Tagen)</div>`;
+      <p>Wie beim Datum fehlt damit bewusst <b>ein Tag</b> – nicht von Hand nachhelfen.${moonDirectNote(plan)}</p>
+      <p>Zu weit geklickt? Die Scheibe lässt sich nur <b>vorwärts</b> schalten: weiterklicken, bis der
+      nächste Mond mittig steht, dann neu zählen. Von Mond zu Mond sind es 29 oder 30 Klicks.</p>
+      <p class="muted">${moonNote}</p>`;
     },
-    setup: (ctx) => {
-      STEPS[3].setup(ctx);
-      ctx.watch.setDate(dayShift(ctx.today, extraMidnightPass() ? -1 : 0));
-      ctx.watch.dangerOpacity = 0;
+    sim: ({ watch }) => `Hier fehlen der Scheibe noch ${clicks(watch.mech.clicksToFullMoonPose())}
+      bis zur Vollmond-Stellung.`,
+    apply: ({ watch, plan }) => {
+      const n = watch.mech.clicksToFullMoonPose() + plan.moonClicksAtPark;
+      for (let i = 0; i < n; i++) watch.mech.quickMoon();
     },
-    build: ({ watch, moon }) => {
+    build: (ctx) => {
+      const { watch } = ctx;
       const tl = new Timeline();
-      const edge = extraMidnightPass();
-      const target = moonTarget(moon) - (edge ? 1 : 0);
-      const n = edge ? (moon.clicksFromFullMoon + 29) % 30 : moon.clicksFromFullMoon;
-      const start = moonTarget(moon) - MOON_START_OFFSET + 1;
-      // Quick-set only advances: crank forward to the next full-moon pose.
-      const fullPose = start <= 0 ? 0 : SYNODIC_MONTH;
-      tl.tween(1.0, 2.8, (v) => (watch.moonDays = start + v * (fullPose - start)));
-      for (let i = 1; i <= n; i++) {
-        tl.call(4.4 + i * 0.45, () => {
-          watch.moonDays = fullPose + i;
-          watch.crownSpin += 0.5; // counterclockwise click (towards 6)
-        });
-      }
-      tl.call(4.4 + n * 0.45 + 0.4, () => (watch.moonDays = fullPose + target));
+      const toReference = watch.mech.clicksToFullMoonPose();
+      const afterReference = ctx.plan.moonClicksAtPark;
+      let t = 1.0;
+      for (let i = 0; i < toReference; i++) click(tl, t + i * 0.22, watch, 1, () => watch.mech.quickMoon()); // towards 6
+      t += toReference * 0.22 + 0.3;
+      tl.call(t, () => ctx.caption?.('Vollmond-Stellung: Der Mond steht mittig im Fenster.'));
+      t += 1.1;
+      const gap = afterReference > 12 ? 0.24 : 0.42;
+      for (let i = 0; i < afterReference; i++) click(tl, t + i * gap, watch, 1, () => watch.mech.quickMoon());
       return tl;
     },
   },
   // ------------------------------------------------------------- 6
   {
-    kicker: 'Schritt 6 · Standard-Routine: Atomzeit',
-    title: 'Zeit sekundengenau stellen',
-    camera: { pos: [0, 44, 21], target: [0, 0, 0] },
-    body: () => {
-      const edge = extraMidnightPass();
-      const sweepNote = edge
-        ? `<li>Zeiger <b>im Uhrzeigersinn</b> vorwärts drehen — über Mittag und noch einmal
-           über <b>Mitternacht</b>: Das Datum springt dabei auf <b>heute</b> und die
-           Mondscheibe rückt auf ihre Zielposition (dafür wurden beide einen Schritt
-           knapper gestellt).</li>`
-        : `<li>Zeiger <b>im Uhrzeigersinn</b> von 6:30 Uhr vorwärts drehen. Liegt die
-           Zielzeit am Nachmittag oder Abend, laufen sie dabei über die <b>Mittags</b>-Zwölf —
-           dort schaltet weder Datum noch Mond, alles bleibt korrekt.</li>`;
+    kicker: 'Schritt 6 · Tageshälfte klären und Zeit stellen',
+    title: 'Über Mitternacht zur richtigen Zeit',
+    camera: STEP_VIEWS.dial,
+    // Nothing in this text may depend on the time of day at which it was
+    // rendered: noon or midnight can pass while the owner is turning the hands.
+    body: ({ now, plan }) => {
+      const setting = timeSetting(plan, now);
+      const target = settingDay(plan);
+      const dayAfter = addDays(target, 1);
+      const first = firstJump(plan);
+      const second = ring(first + 1);
+      const ringGap = second === dayAfter.getDate()
+        ? ''
+        : ` Die Datumsscheibe kennt keine Monatslängen: nach Schritt 7 am Morgen (nach 4 Uhr) in Position 2
+           von Hand auf <b>${dayAfter.getDate()}</b> weiterschalten.`;
+      const twice = setting.midnightPasses > 1;
+      const jump = twice
+        ? `Seit dem Stellen des Kalenders ist ein neuer Tag angebrochen. Das <b>Datum springt zuerst auf
+           ${first}</b>: Im Werk ist <b>Mitternacht</b>, die Tageshälfte ist jetzt sicher bekannt. Dann
+           <b>einen vollen Tag weiterdrehen</b> – zweimal über die Zwölf –, bis das Datum noch einmal
+           springt: auf <b>${second}</b>.${ringGap} Die Mondscheibe rückt bei jedem der beiden Sprünge
+           einen Tag weiter.`
+        : `Das <b>Datum springt auf ${first}</b>: Im Werk ist <b>Mitternacht</b>, die Tageshälfte ist jetzt
+           sicher bekannt. Die Mondscheibe rückt bei diesem Durchgang ebenfalls einen Tag weiter.`;
+      const dayChange = twice
+        ? ''
+        : `<li>Zeigt die Referenz inzwischen schon den <b>${fmtDay(dayAfter)}</b> (Mitternacht ist während
+           des Einstellens vergangen), fehlt der Uhr ein Tag: die Zeiger <b>einen vollen Tag
+           weiterdrehen</b> – zweimal über die Zwölf –, bis das Datum noch einmal springt (auf
+           ${second}).${ringGap}</li>`;
       return `
-      <p><b>Warte, bis der Sekundenzeiger auf 12 steht</b>, und ziehe die Krone dann ganz
-      heraus in <code>Position 3</code> → <span class="hl">Sekundenstopp</span>, das Werk hält an.</p>
+      <p>Jetzt klärt sich die Tageshälfte, und Datum und Mond rücken auf den
+      <b>${fmtDay(twice ? dayAfter : target)}</b>.</p>
+      <div class="okbox"><b>Voraussetzung:</b> Das Datumsfenster zeigt die <b>${plan.parkDate}</b> aus
+      Schritt 4, und der Stundenzeiger steht noch nahe der 5. Zeigt das Fenster eine andere Zahl oder ist
+      die Uhr seit Schritt 5 länger weitergelaufen: zurück zu Schritt 3.</div>
+      <p><b>Warte, bis der Sekundenzeiger auf 12 steht</b>, und ziehe die Krone dann ganz heraus in
+      <code>Position 3</code> – <span class="hl">Sekundenstopp</span>, das Werk hält an.</p>
       <ol>
-        ${sweepNote}
-        <li>Weiter bis kurz <b>vor</b> die Zielminute, den Minutenzeiger zuletzt
-        <b>von hinten anfahren</b> (nimmt das Zahnspiel heraus, der Zeiger steht exakt).</li>
-        <li>Als Ziel die <b>nächste volle Minute</b> der Referenzzeit wählen
-        (oben rechts läuft sie live mit — Abgleich z. B. mit <code>time.is</code>).</li>
-        <li>Genau beim Sekundensprung auf <b>:00</b> die Krone auf
-        <code>Position 1</code> zurückdrücken — das Werk startet synchron.</li>
-      </ol>`;
+        <li>Die Krone wieder so drehen, dass die Zeiger <b>vorwärts</b> laufen, und das Datumsfenster
+        beobachten. Läuft der Stundenzeiger über die Zwölf und das Datum bleibt stehen, war das der
+        <b>Mittag</b> – weiterdrehen.</li>
+        <li>${jump}</li>
+        ${dayChange}
+        <li>Von Mitternacht aus <b>weiter vorwärts</b> bis zur Uhrzeit der Referenz. Zeigt sie eine Zeit
+        <b>vor 12:00 Uhr</b>: die Zwölf nicht noch einmal überfahren. Zeigt sie <b>12:00 Uhr oder
+        später</b>: genau einmal über die Zwölf – das ist der Mittag, dort schaltet nichts.</li>
+        <li>Den Minutenzeiger genau auf den Strich der <b>nächsten vollen Minute</b> stellen. Als Referenz
+        dient eine genaue Uhr, z. B. <code>time.is</code>; im 3D-Modus läuft oben rechts die Gerätezeit
+        mit.</li>
+        <li>Genau beim Sekundensprung der Referenz auf <b>:00</b> die Krone gerade bis
+        <code>Position 1</code> hineindrücken, ohne sie zu drehen – das Werk startet synchron.</li>
+      </ol>
+      <div class="warnbox"><b>Kontrolle:</b> Zeigt das Fenster das Datum der Referenz, darf es <b>nicht noch
+      einmal</b> springen. Ist es doch weitergesprungen, hilft Zurückdrehen nicht – rückwärts schaltet der
+      Kalender nicht. Dann zurück zu Schritt 3.</div>`;
     },
-    setup: (ctx) => {
-      STEPS[4].setup(ctx);
-      ctx.watch.moonDays = moonTarget(ctx.moon) - (extraMidnightPass() ? 1 : 0);
-      ctx.watch.crownPull = 2;
+    sim: ({ watch }) => {
+      const morning = watch.mech.minuteOfDay < HALF_DAY;
+      const other = clock24(timeOfDay(watch.mech.minuteOfDay + HALF_DAY));
+      return `Hier steht das Werk auf <b>${clock24(watch.mech.minuteOfDay)} Uhr</b>: ${morning
+        ? 'Die Zeiger laufen erst über den <b>Mittag</b> – kein Sprung – und zwölf Stunden später über Mitternacht.'
+        : 'Schon der erste Durchgang durch die Zwölf ist <b>Mitternacht</b>.'}
+        <button type="button" class="text-button" data-action="other-half">Mit dem Werk auf ${other} Uhr zeigen</button>
+        <span id="sync-status" class="sync-status">Das Modell wartet nach dem Zeigerstellen auf eine volle
+        Minute der Gerätezeit.</span>`;
     },
-    build: ({ watch, today }) => {
+    apply: ({ watch, now, plan }) => {
+      const setting = timeSetting(plan, now);
+      // The state "now": the hands are where they will be at the reference minute, minus the wait.
+      const lead = (setting.target.getTime() - Date.now()) / 60_000;
+      watch.mech.turnTo(timeTarget(watch.mech, setting) - lead);
+      const current = new Date();
+      watch.lockToClock(current.getTime(), current.getSeconds() + current.getMilliseconds() / 1000);
+      watch.crownPull = 1;
+      watch.zone = 0;
+    },
+    build: (ctx) => {
+      const { watch } = ctx;
       const tl = new Timeline();
-      const now = new Date();
-      const edge = extraMidnightPass(now);
-      const targetMin = (now.getHours() % 12) * 60 + now.getMinutes() + 1;
-      // From 6:30 AM: PM targets cross noon (one 12-pass), the 0:00–6:30 edge case
-      // crosses noon AND midnight (two 12-passes), morning targets cross nothing.
-      const passes = edge ? 2 : now.getHours() >= 12 ? 1 : 0;
-      const from = 720 + SAFE_TIME; // parked at 6:30 AM (display continues from step 3)
-      const sweepTarget = 720 + passes * 720 + targetMin;
-      const backOff = Math.min(4, sweepTarget - from);
-      const midnightAt = 720 + 1440; // second 12-pass after the park position
-      let flipped = false;
-      const setMin = (v: number) => {
-        if (edge && !flipped && watch.displayMinutes < midnightAt && v >= midnightAt) {
-          flipped = true;
-          watch.setDate(today.getDate()); // midnight passed — date jumps to today
-          watch.moonDays += 1; // ...and the moon disc advances one day too
-        }
-        watch.displayMinutes = v;
-      };
-      tl.call(0.8, () => {
-        watch.running = false;
-        watch.displaySeconds = 0; // stop-second: hands halt for the sync
-      });
+      const setting = timeSetting(ctx.plan, ctx.now);
+      let syncEpoch = setting.target.getTime();
+      const start = watch.mech.minutes;
+      const midnight = nextMidnight(start);
+      const noon = midnight - HALF_DAY;
+      const target = timeTarget(watch.mech, setting);
+      /** The movement's midnight that begins the day of the reference minute. */
+      const referenceDayStart = target - setting.targetMinuteOfDay;
+      const secondStart = watch.displaySeconds;
+      watch.running = false;
+      // Accelerate the illustrative wait to twelve, then hack the movement.
+      tl.tween(0, 0.8, (v) => (watch.displaySeconds = secondStart + (60 - secondStart % 60) * v), linear);
+      tl.call(0.8, () => (watch.displaySeconds = 0));
       tl.tween(0.5, 0.9, (v) => (watch.crownPull = 2 + v), easeOut);
-      tl.tween(2.2, 4.2, (v) => setMin(from + v * (sweepTarget - backOff - from)));
-      tl.tween(7.0, 1.8, (v) => setMin(sweepTarget - backOff + v * backOff), linear);
-      tl.call(10.4, () => {
-        watch.liveSync = true; // pushed back at :00 — running in sync from here
-        watch.running = true;
+      let t = 2.2;
+      if (start < noon) {
+        // Parked in the morning: the first pass of the twelve is noon and switches nothing.
+        const toNoon = sweepSeconds(noon - start);
+        sweep(tl, t, toNoon, ctx, noon);
+        t += toNoon;
+        tl.call(t, () => ctx.caption?.('Zwölf Uhr – das Datum bleibt stehen: Das war der Mittag. Weiterdrehen.'));
+        t += 1.4;
+      }
+      const toMidnight = sweepSeconds(midnight - Math.max(start, noon));
+      sweep(tl, t, toMidnight, ctx, midnight);
+      t += toMidnight;
+      tl.call(t, () => ctx.caption?.(`Das Datum springt auf ${watch.mech.date}: Mitternacht – die Tageshälfte ist klar.`));
+      t += 1.6;
+      // On to the reference minute; any further midnight is a planned one.
+      const events: SweepEvents = {
+        noon: () => ctx.caption?.('Zwölf Uhr mittags – nichts schaltet, das Datum bleibt stehen.'),
+        switched: () => ctx.caption?.(`Noch eine Mitternacht – das Datum springt auf ${watch.mech.date}.`),
+      };
+      const distance = target - midnight;
+      const backOff = Math.min(4, distance);
+      const turning = sweepSeconds(distance);
+      sweep(tl, t, turning, ctx, target - backOff, easeInOut, events);
+      sweep(tl, t + turning + 0.4, 1.8, ctx, target, linear, events); // the last minutes slowly, onto the mark
+      const ready = t + turning + 3.0;
+      tl.hold(ready, () => {
+        const current = Date.now();
+        // Paused or in the background across the reference minute: take the next
+        // one. The hands follow the wall clock from the start of the reference day,
+        // so noon, midnight or a clock change in between come out right.
+        if (current > syncEpoch + 5_000) {
+          const next = new Date(Math.floor(current / 60_000) * 60_000 + 60_000);
+          const dateBefore = watch.mech.date;
+          watch.mech.turnTo(referenceDayStart + calendarDaysBetween(setting.target, next) * DAY + minuteOfDay(next));
+          if (watch.mech.date !== dateBefore) {
+            ctx.caption?.(`Inzwischen ist Mitternacht vorbei – das Datum springt auf ${watch.mech.date}.`);
+          }
+          syncEpoch = next.getTime();
+        }
+        const label = document.getElementById('sync-status');
+        const status = current < syncEpoch
+          ? `Bereit. Start zur vollen Minute in ${Math.ceil((syncEpoch - current) / 1000)} s.`
+          : 'Das Modell läuft jetzt mit der Gerätezeit.';
+        if (label && label.textContent !== status) label.textContent = status;
+        return current >= syncEpoch;
       });
-      tl.tween(10.4, 0.7, (v) => (watch.crownPull = 3 - v * 2), easeOut);
+      tl.call(ready, () => watch.lockToClock(syncEpoch, 0));
+      tl.tween(ready, 0.7, (v) => (watch.crownPull = 3 - v * 2), easeOut);
+      tl.tween(ready + 0.4, 0.9, (v) => (watch.zone = 1 - v));
       return tl;
     },
   },
@@ -366,33 +541,49 @@ export const STEPS: Step[] = [
   {
     kicker: 'Schritt 7 · Abschluss',
     title: 'Krone festschrauben & Endkontrolle',
-    camera: { pos: [28, 34, 38], target: [0, 0, 0] },
-    body: ({ moon, today }) => `
-      <p>Krone in <code>Position 1</code> zurückdrücken, dann leicht <b>hineindrücken und im
-      Uhrzeigersinn (Richtung 12 Uhr) festschrauben</b>, bis spürbarer Widerstand kommt —
-      erst dann sind die 100 m Wasserdichtigkeit wieder gewährleistet.</p>
-      <div class="okbox">✅ <b>Endkontrolle</b><br>
-      · Datum zeigt <b>${today.getDate()}.</b> (${fmtDate(today)})<br>
-      · Mondphase: <b>${moon.name}</b> — Scheibe steht ${moon.clicksFromFullMoon} Klick${
-        moon.clicksFromFullMoon === 1 ? '' : 's'
-      } nach Vollmond<br>
+    camera: STEP_VIEWS.hero,
+    // The final check describes the day the watch has been set to: the day after
+    // the park day, or the present day when midnight has passed since.
+    body: ({ moon, now, plan }) => {
+      const jumps = Math.max(1, calendarDaysBetween(plan.parkDay, now));
+      const day = addDays(plan.parkDay, jumps);
+      const shown = ring(plan.parkDate + jumps);
+      const moonDays = daysSinceFullMoonDate(day);
+      const moonLineFinal = moonDays
+        ? `die Scheibe steht ${days(moonDays)} nach der Vollmond-Stellung`
+        : 'ein Mond steht – bis auf höchstens einen Klick – mittig im Fenster';
+      const monthNote = shown === day.getDate()
+        ? ''
+        : `<br>· Die Datumsscheibe kennt keine Monatslängen: am Morgen nach 4 Uhr in Position 2 von Hand
+           auf <b>${day.getDate()}</b> weiterschalten`;
+      return `
+      <p>Die Krone steht in <code>Position 1</code>: leicht eindrücken und dabei <b>im Uhrzeigersinn
+      (Richtung 12 Uhr) handfest festschrauben</b> – erst dann ist die Uhr wieder bis 100 m wasserdicht.</p>
+      <div class="okbox"><b>Endkontrolle</b><br>
+      · Datum zeigt <b>${shown}</b> (${fmtDate(day)})${monthNote}<br>
+      · Mondphase: <b>${moon.name}</b> – ${moonLineFinal}<br>
       · Sekundenzeiger läuft <b>synchron zur Referenzzeit</b><br>
       · Krone <b>verschraubt</b></div>
-      <p class="muted">Gangreserve nach Vollaufzug: ca. 38 h. Wird die Uhr täglich getragen,
-      hält die Automatik sie am Laufen — sonst beim nächsten Stillstand einfach wieder bei
-      Schritt 1 beginnen.</p>`,
-    setup: (ctx) => {
-      ctx.watch.crownPull = 2;
-      ctx.watch.crownSpin = 0;
-      ctx.watch.liveSync = true;
-      ctx.watch.running = true;
-      ctx.watch.dangerOpacity = 0;
-      ctx.watch.moonDays = moonTarget(ctx.moon);
-      ctx.watch.setDate(ctx.today.getDate());
+      <div class="okbox"><b>Probe der Tageshälfte:</b> Das Datum wechselt von jetzt an <b>nachts</b>, um
+      Mitternacht. Springt es stattdessen mittags, läuft die Uhr um zwölf Stunden versetzt – dann die
+      Schritte 3 bis 6 wiederholen.</div>
+      <p class="muted">Nach Monaten mit weniger als 31 Tagen das Datum am Morgen des Ersten (nach 4 Uhr)
+      von Hand auf 1 weiterschalten – in Position 2 und nie im Schaltfenster (ca. 20 bis 4 Uhr). Die
+      Mondscheibe rechnet mit 29,5 statt 29,53 Tagen je Mondzyklus und ist dem Mond nach etwa
+      zweieinhalb Jahren einen Tag voraus; dann wie in Schritt 5 neu einstellen, denn sie schaltet nur
+      vorwärts. Bleibt die Uhr stehen (Gangreserve ca. 38 h): Krone lösen und wieder bei Schritt 1
+      beginnen.</p>`;
     },
+    sim: ({ watch, now }) => {
+      const { mech } = watch;
+      const right = mech.date === now.getDate() && mech.isAfternoon === now.getHours() >= 12;
+      return `Hier steht das Werk auf <b>${clock24(mech.minuteOfDay)} Uhr</b> (${dayPart(mech.minuteOfDay)}),
+        Datum <b>${mech.date}</b>${right ? ' – beides stimmt mit deiner Gerätezeit überein.' : '.'}`;
+    },
+    apply: ({ watch }) => { watch.crownPull = 0; },
     build: ({ watch }) => {
       const tl = new Timeline();
-      tl.tween(0.6, 1.0, (v) => (watch.crownPull = 2 - v * 2), easeOut); // push all the way in
+      tl.tween(0.6, 1.0, (v) => (watch.crownPull = 1 - v), easeOut); // push all the way in
       tl.tween(1.8, 2.2, (v) => (watch.crownSpin = -v * Math.PI * 6)); // screw down CW
       return tl;
     },

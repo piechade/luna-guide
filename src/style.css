@@ -1,0 +1,534 @@
+/* Luna Guide. System fonts only: the CSP allows no external host, and no font
+   file is shipped. Layouts, in the order of the media queries at the end:
+     desktop       stage | inspector
+     compact       narrow or short windows: small header, no footer, dense stage
+       stacked     stage above the inspector (phones, narrow windows)
+       side by side  short landscape windows from 600 px width
+       sheet       narrower and short (400 % zoom): the document itself scrolls */
+
+:root {
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", P052, Georgia, "Noto Serif", serif;
+
+  /* Surfaces. */
+  --paper: #fafaf7;
+  --linen: #eeede8;
+  --track: #e9e9e3;
+  --card: #fff;
+  --stage: #e4e4dd;
+
+  /* Text. Each is at least 4.5:1 on every surface above, --stage included. */
+  --ink: #1c3444;
+  --text: #44524f;
+  --muted: #56625f;
+  --accent: #1f4e8c;
+
+  /* Lines. --line and --line-soft are decoration; --line-strong carries state and is at least 3:1. */
+  --line: #dcded8;
+  --line-soft: #c9cdc6;
+  --line-strong: #6f7c73;
+
+  /* The switching window, and the two kinds of note in the step text. */
+  --signal: #9c3518;
+  --signal-text: #7a2a12;
+  --signal-arc: #c9512b;
+  --warn-bg: #f4ece0;
+  --warn-text: #6b5632;
+  --ok-bg: #eaf0e6;
+  --ok-text: #3f5a3a;
+  --sim-bg: #eef1f2;
+
+  --shadow: 0 1px 2px #1c34440f, 0 8px 24px #1c344414;
+  --radius: 10px;
+
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--linen);
+  font-synthesis: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body { margin: 0; }
+#app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+[hidden] { display: none !important; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+a { color: var(--accent); text-underline-offset: 3px; }
+p { line-height: 1.6; }
+b { font-weight: 600; }
+h1, h2, h3 { color: var(--ink); text-wrap: balance; }
+h2 { font: 400 28px/1.15 var(--serif); letter-spacing: -.012em; margin: 0 0 12px; }
+h3 { font: 600 16px/1.3 var(--sans); margin: 0; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: var(--muted); }
+.icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+button, a, summary { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line-soft); background-color: transparent; border-radius: var(--radius); transition: background-color .15s, color .15s, border-color .15s; }
+button:disabled { cursor: default; opacity: .45; }
+button:hover:not(:disabled) { background-color: #1c344412; }
+button:active:not(:disabled) { transform: translateY(1px); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* These fill a clipped box, so their ring is drawn inside it. */
+[role=tabpanel]:focus-visible, #scene:focus-visible, #inspector:focus-visible, #webgl-fallback:focus-visible { outline-offset: -2px; }
+.skip-link { position: fixed; top: 8px; left: 12px; z-index: 30; padding: 12px 16px; background: var(--ink); color: #fff; border-radius: 6px; transform: translateY(-160%); }
+.skip-link:focus { transform: translateY(0); }
+
+/* ---------------------------------------------------------------- header, footer */
+
+.brand { flex: none; height: 64px; display: flex; align-items: center; gap: 28px; padding: 0 40px; border-bottom: 1px solid var(--line); }
+.wordmark { display: flex; align-items: center; gap: 9px; color: var(--ink); font: 400 21px/1 var(--serif); letter-spacing: .14em; white-space: nowrap; }
+.brand-mark { width: 24px; height: 24px; flex: none; margin-right: 3px; }
+.wordmark-sub { font: 600 12px/1 var(--sans); letter-spacing: .2em; }
+.header-note { font-size: 13px; color: var(--muted); border-left: 1px solid var(--line-soft); padding-left: 28px; }
+.header-right { margin-left: auto; display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.header-right time { font-size: 17px; color: var(--ink); font-variant-numeric: tabular-nums lining-nums; letter-spacing: .02em; }
+footer { flex: none; min-height: 32px; display: flex; justify-content: space-between; align-items: center; gap: 24px; border-top: 1px solid var(--line); padding: 0 40px; font-size: 12px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- stage */
+
+/* Only the two reading regions scroll, never the document (except in the sheet layout). */
+.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 390px; overflow: hidden; }
+
+/* Rows: read-out band, free rectangle, caption band, view controls, hint. The
+   canvas lies under all of them; #stage-safe is the free rectangle itself. */
+#stage {
+  position: relative; min-width: 0; min-height: 0; overflow: hidden;
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  gap: 12px 10px; padding: 34px 40px 18px;
+  /* A pool of light where the watch stands; towards the bands the backdrop is one flat tone, which the veils below match. */
+  background: radial-gradient(ellipse 66% 44% at 50% 52%, #fdfcf8 0, #f6f5f0 42%, #e4e4dd00 100%) var(--stage);
+}
+#viewport { position: absolute; inset: 0; z-index: 0; }
+#scene { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+/* Absolutely positioned inside its grid area: exactly the middle row, whatever the bands around it need. */
+#stage-safe { position: absolute; inset: 0; grid-area: 2 / 1 / 3 / -1; pointer-events: none; visibility: hidden; }
+/* The canvas lies under the veils, which would dim its own focus ring. */
+#stage:has(#scene:focus-visible)::after { content: ''; position: absolute; inset: 0; z-index: 3; outline: 2px solid var(--accent); outline-offset: -2px; pointer-events: none; }
+
+.stage-top { grid-area: 1 / 1 / 2 / -1; z-index: 1; position: relative; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px 24px; pointer-events: none; }
+/* Close-ups run on under the bands. A veil in the backdrop's tone (--stage) lets the model fade out there, so the text on it stays legible. */
+.stage-top::before, .stage-note::before { content: ''; position: absolute; z-index: -1; left: -60px; right: -60px; pointer-events: none; }
+.stage-top::before { top: -40px; bottom: -28px; background: linear-gradient(to bottom, #e4e4ddf5 0, #e4e4dde0 62%, #e4e4dd00 100%); }
+.stage-note::before { top: -28px; bottom: -200px; background: linear-gradient(to top, #e4e4ddf5 0, #e4e4dde0 calc(100% - 70px), #e4e4dd00 100%); }
+.stage-heading { flex: 1 1 250px; max-width: 400px; min-width: 0; }
+.stage-heading h1 { font: 400 32px/1.14 var(--serif); letter-spacing: -.012em; margin: 0; }
+.stage-heading p { font-size: 14px; line-height: 1.5; color: var(--muted); margin: 10px 0 0; max-width: 330px; text-wrap: pretty; }
+/* In the guide the panel carries the title, and close-ups run under the upper band:
+   the stage heading is kept for assistive technology only and the veil behind it goes. */
+#app[data-mode="guide"] .stage-heading { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+#app[data-mode="guide"] #movement-state { margin-left: auto; }
+#app[data-mode="guide"] .stage-top::before { display: none; }
+
+/* The movement's 24-hour time: what a twelve-hour dial cannot show. Every
+   part keeps its width in both states, so the bands around the free rectangle
+   never move while the hands turn. */
+.movement-state { flex: none; margin: 0 0 0 auto; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; padding: 10px 16px 10px 12px; background: #fffffff2; border: 1px solid var(--line-soft); border-radius: 14px; box-shadow: var(--shadow); line-height: 1.2; pointer-events: auto; }
+.ms-dial { position: relative; width: 56px; height: 56px; display: grid; place-items: center; }
+.ms-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ms-day, .ms-night, .ms-window, .ms-rim { fill: none; }
+.ms-day { stroke: #fff; stroke-width: 6; }
+.ms-night { stroke: var(--ink); stroke-width: 6; }
+.ms-window { stroke: var(--signal-arc); stroke-width: 6; }
+.ms-midnight { stroke: #fff; stroke-width: 1.6; }
+.ms-rim { stroke: var(--line-strong); stroke-width: 1; }
+#ms-hand circle { fill: #fff; stroke: var(--ink); stroke-width: 1.8; }
+/* The marker only means something once the script has turned it. */
+#ms-hand:not([transform]) { visibility: hidden; }
+.ms-icon { position: relative; font: 400 16px/1 "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", "Noto Sans Symbols", "DejaVu Sans", sans-serif; font-variant-emoji: text; color: var(--ink); }
+.ms-text { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "label label date" "clock part part" "status status status"; align-items: baseline; column-gap: 8px; row-gap: 1px; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+.ms-label { grid-area: label; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--muted); }
+.ms-clock { grid-area: clock; color: var(--ink); }
+#ms-time { font-size: 25px; letter-spacing: -.01em; }
+.ms-unit { font-size: 14px; font-weight: 400; }
+#ms-part { grid-area: part; font-size: 15px; }
+#ms-date { grid-area: date; align-self: center; justify-self: end; font-size: 13px; color: var(--ink); background: var(--card); border: 1px solid var(--line-strong); border-radius: 4px; padding: 2px 7px; box-shadow: inset 0 1px 2px #1c344426; }
+#ms-date:empty { visibility: hidden; }
+/* One line, 20 px high. The chip and its note sit in a wrapping row whose second line is clipped: where the
+   note does not fit beside the chip it drops out of sight instead of running into the label. "Kalender ruht"
+   lies over the same place, so both states take the same room. */
+.ms-status { grid-area: status; position: relative; min-width: 0; height: 20px; margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 8px; overflow: hidden; font-size: 13px; line-height: 20px; }
+.ms-zone { flex: none; height: 20px; padding: 0 8px; border-radius: 4px; background: var(--signal); color: #fff; font-weight: 600; }
+.ms-zone-note { flex: none; color: var(--signal-text); font-weight: 600; }
+.ms-idle { position: absolute; left: 0; top: 0; color: var(--muted); }
+/* Hidden, the chip still takes its place (see above); it is taken out of sight and out of the accessibility tree instead. */
+#ms-zone[hidden] { display: block !important; visibility: hidden; }
+#ms-zone[hidden] + .ms-zone-note { visibility: hidden; }
+#ms-zone:not([hidden]) ~ .ms-idle { visibility: hidden; }
+.movement-state.engaged { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal), var(--shadow); }
+.movement-state:has(#ms-zone:not([hidden])) { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal), var(--shadow); }
+
+/* Caption band: the view's name, covered by an event caption while one is shown. */
+.stage-note { grid-area: 3 / 1 / 4 / -1; z-index: 2; position: relative; height: 38px; min-width: 0; pointer-events: none; }
+#detail-tag { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--muted); text-align: center; }
+.stage-caption { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: max-content; max-width: min(580px, 100%); margin: 0; padding: 9px 16px; background: var(--ink); color: #fff; border-radius: var(--radius); font-size: 14px; line-height: 1.42; text-align: center; text-wrap: balance; box-shadow: 0 8px 24px #1c344440; }
+.stage-caption:not([hidden]) + #detail-tag { visibility: hidden; }
+
+.stage-bottom { grid-area: 4 / 1 / 5 / -1; z-index: 2; justify-self: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.view-controls { display: flex; gap: 2px; padding: 4px; background: #fffffff2; border: 1px solid var(--line-soft); border-radius: 14px; box-shadow: var(--shadow); }
+.view-controls button { border: 0; min-height: 40px; padding: 0 18px; font-size: 14px; white-space: nowrap; }
+.icon-button { width: 50px; min-height: 50px; padding: 0; display: grid; place-items: center; background-color: #fffffff2; border-radius: 14px; box-shadow: var(--shadow); }
+.icon-button:hover:not(:disabled) { background-color: #f1f2ee; }
+.view-controls button[aria-pressed=true], .icon-button[aria-pressed=true] { background-color: var(--ink); border-color: var(--ink); color: #fff; }
+.view-controls button[aria-pressed=true]:hover, .icon-button[aria-pressed=true]:hover { background-color: #2a475a; }
+/* The movement is still being built: the pressed button pulses until the watch opens. */
+.icon-button[aria-busy=true] { cursor: progress; }
+.icon-button[aria-busy=true][aria-pressed=true] .icon { animation: busy-pulse 1s ease-in-out infinite alternate; }
+@keyframes busy-pulse { from { opacity: 1; } to { opacity: .35; } }
+.orbit-hint { grid-area: 5 / 1 / 6 / -1; z-index: 2; margin: 0; text-align: center; font-size: 12px; line-height: 1.5; color: var(--muted); pointer-events: none; }
+.hint-coarse { display: none; }
+
+/* ---------------------------------------------------------------- inspector */
+
+#inspector { background: var(--paper); border-left: 1px solid var(--line); padding: 22px 30px 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; }
+.mode-switch { flex: none; display: flex; gap: 4px; padding: 4px; background: var(--track); border-radius: 12px; margin-bottom: 20px; }
+.mode-switch button { flex: 1; min-width: 0; border: 0; border-radius: 8px; min-height: 48px; padding: 5px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.25; }
+.tab-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.tab-sub { font-size: 12px; color: var(--muted); }
+/* Selected: a card with an ink bar, not a fill change alone. */
+.mode-switch button[aria-selected=true] { background-color: var(--card); box-shadow: 0 1px 3px #1c344424, inset 0 -2px 0 var(--ink); }
+.mode-switch button:focus-visible { outline-offset: -2px; }
+
+/* The padding keeps focus rings inside the scroller's clip. */
+#explore-panel, #panel { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 0; margin: -4px -8px 0; scrollbar-width: thin; scrollbar-color: var(--line-soft) transparent; }
+#explore-panel { padding-bottom: 22px; }
+.intro { margin: 0 0 18px; hyphens: auto; text-wrap: pretty; }
+.primary { background-color: var(--ink); border-color: var(--ink); color: #fff; min-height: 48px; padding: 6px 18px; font-size: 15px; font-weight: 600; line-height: 1.25; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.primary:hover:not(:disabled) { background-color: #2a475a; }
+#start-guide { width: 100%; text-align: left; }
+
+.crown-lab { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 18px; }
+.section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.text-button { flex: none; border: 0; border-radius: 6px; padding: 0 6px; margin-inline: -6px; min-height: 32px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.text-button .icon { width: 16px; height: 16px; }
+.crown-diagram { display: block; width: 132px; height: 66px; margin: 2px auto 8px; }
+/* The first label ("Verschraubt") is the longest by far. */
+.crown-positions { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 6px; }
+.crown-positions button { min-height: 58px; padding: 8px 2px 7px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background-color: var(--card); }
+.crown-positions button:hover:not(:disabled) { background-color: #f1f2ee; }
+.crown-positions b { font: 400 21px/1 var(--serif); color: var(--ink); font-variant-numeric: lining-nums; }
+.crown-positions span { font-size: 12px; line-height: 1.2; color: var(--muted); }
+/* Pressed: an ink frame twice as heavy, plus weight. */
+.crown-positions button[aria-pressed=true] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background-color: var(--sim-bg); }
+.crown-positions button[aria-pressed=true] b { font-weight: 700; }
+.crown-positions button[aria-pressed=true] span { color: var(--ink); font-weight: 600; }
+#crown-description { font-size: 14px; line-height: 1.55; min-height: 66px; margin: 14px 0 12px; hyphens: auto; border-radius: 6px; }
+/* A refused crown turn: the notice lights up briefly, so a repeated press visibly answers. */
+#crown-description.refused { animation: refused 0.9s ease-out; }
+@keyframes refused { from { background: var(--warn-bg); box-shadow: 0 0 0 6px var(--warn-bg); } to { background: transparent; box-shadow: 0 0 0 6px transparent; } }
+.turn-controls { display: flex; gap: 8px; }
+.turn-controls button { flex: 1; min-width: 0; min-height: 44px; padding: 4px 6px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; background-color: var(--card); }
+.turn-controls button:hover:not(:disabled) { background-color: #f1f2ee; }
+.lab-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 1.45; color: var(--muted); margin: 12px 0 0; }
+
+.moon-card { display: flex; align-items: center; gap: 14px; border-top: 1px solid var(--line); margin-top: 20px; padding: 18px 0 4px; }
+.moon-orb { width: 46px; height: 46px; flex: none; }
+.moon-night { fill: var(--ink); }
+.moon-lit { fill: #f3ecd6; }
+.moon-neutral { fill: #dfe2da; stroke: var(--line-strong); stroke-width: 1; }
+.moon-mare { fill: #c3c9c0; stroke: none; }
+/* Once the script has drawn the phase, the neutral disc gives way to it. */
+#moon-lit[d] ~ .moon-neutral { display: none; }
+.moon-label { display: block; font-size: 12px; color: var(--muted); }
+#live-moon { display: block; font-size: 15px; color: var(--ink); margin: 1px 0; }
+#moon-detail { display: block; font-size: 13px; color: var(--muted); }
+
+#factsheet { margin-top: 14px; border-top: 1px solid var(--line); }
+summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-size: 14px; color: var(--ink); border-radius: 6px; }
+summary::-webkit-details-marker { display: none; }
+summary .icon { transition: transform .15s; }
+details[open] summary .icon { transform: rotate(180deg); }
+.facts-content { font-size: 13px; line-height: 1.6; }
+.facts-content p { margin: 0 0 10px; }
+.facts-content a { display: flex; align-items: center; gap: 6px; min-height: 32px; width: fit-content; }
+.facts-content a .icon { width: 16px; height: 16px; }
+
+/* ---------------------------------------------------------------- guide */
+
+#panel { display: flex; flex-direction: column; scroll-padding-block: 8px 104px; }
+#panel > * { flex: none; }
+.guide-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
+/* The step counter is framed like the watch's date window. */
+#step-count { font: 400 15px/1 var(--serif); font-variant-numeric: tabular-nums lining-nums; color: var(--ink); background: var(--card); border: 1px solid var(--line-strong); border-radius: 4px; padding: 5px 7px 4px; box-shadow: inset 0 1px 2px #1c344426; white-space: nowrap; }
+#step-dots { display: flex; gap: 5px; margin: 4px 0 2px; }
+/* The button is the hit area; its bar is drawn by ::after. */
+#step-dots button { flex: 1; min-width: 0; height: 28px; padding: 0; border: 0; border-radius: 4px; position: relative; }
+#step-dots button::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 3px; transform: translateY(-50%); border-radius: 2px; background: var(--line-strong); }
+#step-dots button.done::after { background: var(--ink); }
+#step-dots button.active::after { height: 7px; border-radius: 4px; background: var(--accent); }
+#step-kicker { font-size: 13px; line-height: 1.4; color: var(--muted); }
+#step-title { font-size: 27px; margin: 4px 0 14px; }
+#step-title:focus-visible { outline-offset: 4px; }
+
+#step-body { font-size: 15px; line-height: 1.6; hyphens: auto; overflow-wrap: break-word; }
+#step-body p { margin: 0 0 12px; text-wrap: pretty; }
+#step-body b { color: var(--ink); }
+#step-body .hl { color: var(--ink); font-weight: 600; background: linear-gradient(transparent 62%, #d9e3f1 0); }
+#step-body ol { padding-left: 22px; margin: 0 0 14px; }
+#step-body li { padding-left: 3px; margin: 8px 0; }
+#step-body li::marker { color: var(--ink); font-weight: 600; }
+code { font: inherit; font-size: .88em; font-weight: 600; color: var(--ink); background: var(--track); border: 1px solid var(--line-soft); padding: 1px 6px; border-radius: 5px; white-space: nowrap; }
+#step-body .muted, .muted { font-size: 13px; line-height: 1.55; color: var(--muted); }
+.warnbox, .okbox, .simbox { font-size: 14px; line-height: 1.55; margin: 14px 0; border-radius: var(--radius); }
+.warnbox, .okbox { position: relative; padding: 12px 14px 12px 42px; }
+.warnbox { background: var(--warn-bg); color: var(--warn-text); }
+.okbox { background: var(--ok-bg); color: var(--ok-text); }
+#step-body .warnbox b { color: #4d3c1c; }
+#step-body .okbox b { color: #2c4329; }
+/* The step text carries no icons of its own. */
+.warnbox::before, .okbox::before { content: ''; position: absolute; left: 13px; top: 13px; width: 20px; height: 20px; background-color: currentColor; -webkit-mask: var(--glyph) center / contain no-repeat; mask: var(--glyph) center / contain no-repeat; }
+.warnbox { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4 21 19.5H3z'/%3E%3Cpath d='M12 10v4.5M12 17v.01'/%3E%3C/svg%3E"); }
+.okbox { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M8 12.4l2.8 2.8L16 9.6'/%3E%3C/svg%3E"); }
+.simbox { padding: 12px 14px; background: var(--sim-bg); border-left: 3px solid var(--accent); border-radius: 4px var(--radius) var(--radius) 4px; }
+.simbox-label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--accent); margin-bottom: 3px; }
+.simbox .text-button { display: flex; width: fit-content; margin-top: 4px; white-space: normal; text-align: left; }
+.counter { display: block; font: 400 22px/1.3 var(--serif); font-variant-numeric: tabular-nums lining-nums; color: var(--ink); }
+.sync-status { display: block; margin-top: 6px; font-weight: 600; color: var(--ink); }
+/* The bottom margin keeps the last line clear of the fade where it cannot be animated away. */
+.guide-note { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 2px 0 30px; }
+
+/* Stays at the bottom of the sheet: "Weiter" is reachable at every window
+   size. The fade above it says that the text goes on. */
+.guide-footer { position: sticky; bottom: 0; z-index: 2; margin: auto -8px 0; padding: 10px 8px 16px; background: var(--paper); display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "tools status" "nav nav"; align-items: center; gap: 10px 12px; }
+.guide-footer::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 28px; background: linear-gradient(to top, var(--paper), #fafaf700); pointer-events: none; }
+@supports (animation-timeline: scroll()) {
+  /* Where the browser can tell, the fade goes once the end of the text is reached. */
+  .guide-footer::before { animation: cue-out linear both; animation-timeline: scroll(nearest block); animation-range: calc(100% - 36px) 100%; }
+  @keyframes cue-out { to { opacity: 0; } }
+}
+.animation-tools { grid-area: tools; display: flex; gap: 6px; }
+.animation-status { grid-area: status; display: grid; gap: 1px; font-size: 13px; line-height: 1.3; color: var(--muted); }
+.tool-button { position: relative; width: 44px; min-height: 44px; padding: 0; display: grid; place-items: center; background-color: var(--card); color: var(--ink); }
+.tool-button:hover:not(:disabled) { background-color: #f1f2ee; }
+/* The script writes a glyph label into this button. Its name is the
+   aria-label; the sign is drawn here, from the state the label names. */
+#btn-pause { font-size: 0; }
+#btn-pause::before { content: ''; position: absolute; inset: 0; margin: auto; box-sizing: border-box; width: 13px; height: 15px; border-inline: 4px solid currentColor; }
+#btn-pause[aria-label*="fortsetzen"]::before { width: 0; height: 0; left: 3px; border-block: 8px solid transparent; border-right: 0; border-left: 13px solid currentColor; }
+#controls { grid-area: nav; min-width: 0; display: flex; gap: 8px; }
+#controls button { min-height: 48px; font-size: 15px; line-height: 1.25; }
+#btn-prev { padding: 6px 16px 6px 12px; display: inline-flex; align-items: center; gap: 6px; background-color: var(--card); color: var(--ink); }
+#btn-prev:hover:not(:disabled) { background-color: #f1f2ee; }
+#btn-next { flex: 1; min-width: 0; justify-content: center; text-align: center; }
+
+/* ---------------------------------------------------------------- text guide (no 3D) */
+
+#webgl-fallback { position: fixed; inset: 0; background: var(--paper); z-index: 20; overflow: auto; padding: 36px 24px; }
+.inner { max-width: 660px; margin: auto; }
+.inner h1 { font: 400 32px/1.15 var(--serif); margin: 8px 0 14px; }
+.inner section { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 22px; }
+.inner h2 { font-size: 26px; }
+.inner p, .inner li { font-size: 15px; line-height: 1.65; }
+.inner ol { padding-left: 22px; }
+.inner li { margin: 8px 0; }
+
+/* ================================================================ layouts */
+
+@media (min-width: 1600px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 430px; }
+  #inspector { padding-inline: 38px; }
+  #stage { padding-inline: 52px; }
+  .brand, footer { padding-inline: 52px; }
+}
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 350px; }
+  #inspector { padding-inline: 24px; }
+  #stage { padding: 26px 28px 16px; }
+  .brand, footer { padding-inline: 28px; }
+  .header-note { display: none; }
+  .stage-heading h1 { font-size: 28px; }
+  .stage-caption { max-width: 100%; }
+}
+@media (max-width: 950px) {
+  /* A caption runs to two lines on a stage this narrow; the band is kept for both. */
+  .stage-note { height: 58px; }
+}
+@media (max-height: 800px) {
+  .brand { height: 56px; }
+  #stage { padding-top: 22px; row-gap: 10px; }
+  .stage-heading h1 { font-size: 27px; }
+  .stage-heading p { margin-top: 6px; }
+  .orbit-hint { display: none; }
+  #inspector { padding-top: 16px; }
+  .mode-switch { margin-bottom: 14px; }
+  #step-title { font-size: 25px; margin-bottom: 12px; }
+}
+@media (max-height: 660px) {
+  .stage-heading p { display: none; }
+  .stage-heading h1 { font-size: 24px; }
+  footer { display: none; }
+}
+
+/* Compact: narrow or short windows. */
+@media (max-width: 760px), (max-height: 520px) {
+  .brand { height: 48px; padding-inline: 16px; gap: 12px; }
+  .wordmark { font-size: 18px; }
+  .brand-mark { width: 20px; height: 20px; }
+  .header-note, footer { display: none; }
+  .header-right time { font-size: 16px; }
+
+  #stage { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px 8px; padding: 8px 12px; }
+  /* No room for the headline above a model this small; it stays the page's h1 for assistive technology. */
+  .stage-heading { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .movement-state { flex: 1; margin: 0; column-gap: 7px; padding: 5px 10px 5px 6px; border-radius: 12px; }
+  .ms-dial { width: 38px; height: 38px; }
+  .ms-icon { font-size: 12px; }
+  .ms-text { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "label label status status" "clock part part date"; column-gap: 6px; }
+  .ms-label { letter-spacing: .03em; }
+  .ms-status { margin-top: 0; justify-content: flex-end; column-gap: 5px; font-size: 12px; }
+  .ms-zone { padding: 0 5px; }
+  .ms-idle { left: auto; right: 0; }
+  #ms-time { font-size: 20px; }
+  #ms-part { font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+  #ms-date { padding: 1px 6px; }
+
+  /* Explore: view controls only. Guide: "open the watch" on the left, the caption beside it. */
+  .stage-note, .orbit-hint { display: none; }
+  .stage-bottom { grid-area: 3 / 1 / 4 / -1; gap: 6px; }
+  .view-controls, .icon-button { border-radius: 12px; }
+  .view-controls { padding: 3px; }
+  .view-controls button { min-height: 38px; padding-inline: 14px; }
+  .icon-button { width: 46px; min-height: 46px; }
+  #app[data-mode=guide] .view-controls, #app[data-mode=guide] #btn-rotate { display: none; }
+  #app[data-mode=guide] .stage-bottom { grid-area: 3 / 1 / 4 / 2; }
+  #app[data-mode=guide] .stage-note { display: block; grid-area: 3 / 2 / 4 / 3; height: 46px; }
+  #detail-tag { display: none; }
+  .stage-caption { left: 0; right: 0; bottom: 0; transform: none; width: auto; max-width: none; min-height: 46px; display: flex; align-items: center; padding: 5px 12px; font-size: 13px; line-height: 1.35; text-align: left; text-wrap: wrap; }
+
+  #inspector { padding: 8px 16px 0; }
+  .mode-switch { padding: 3px; margin-bottom: 8px; }
+  .mode-switch button { min-height: 44px; padding-block: 3px; }
+  #explore-panel > h2, .intro { display: none; }
+  .crown-lab { margin-top: 16px; padding-top: 14px; }
+  #crown-description { min-height: 0; }
+  #step-title { font-size: 22px; margin: 2px 0 10px; }
+  .animation-status { display: none; }
+  .guide-footer { grid-template-areas: "tools nav"; padding-block: 6px 8px; }
+  .animation-tools { padding-right: 10px; border-right: 1px solid var(--line); }
+  .tool-button { width: 48px; min-height: 48px; }
+  .stage-top::before, .stage-note::before { display: none; }
+  #panel { scroll-padding-bottom: 80px; }
+}
+
+/* Stacked: the reader gets the larger share in the guide, the model in the explore mode. */
+@media (max-width: 760px) and (min-height: 520.02px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: clamp(210px, 42dvh, 420px) minmax(0, 1fr); }
+  #app[data-mode=explore] .workspace { grid-template-rows: clamp(230px, 48dvh, 480px) minmax(0, 1fr); }
+  #inspector { border-left: 0; border-top: 1px solid var(--line); }
+}
+@media (max-width: 760px) and (min-height: 520.02px) and (max-height: 600px) {
+  /* A short phone screen: the reader needs every line it can get. */
+  .workspace { grid-template-rows: clamp(210px, 40dvh, 420px) minmax(0, 1fr); }
+}
+
+/* Short windows: the counter moves beside the progress bars, and the two lines that the tab and the heading already cover go. */
+@media (max-width: 760px) and (max-height: 700px), (max-height: 520px) {
+  #panel { position: relative; }
+  .guide-goal, #step-kicker { display: none; }
+  .guide-top { position: absolute; top: 9px; right: 8px; }
+  #step-dots { margin-right: 74px; }
+}
+
+/* Side by side: short landscape windows from 600 px width, phones held sideways. */
+@media (min-width: 600px) and (max-height: 520px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) min(50vw, 380px); }
+  .brand { height: 44px; }
+  .view-controls button { padding-inline: 10px; }
+}
+
+/* Sheet: narrow and short, too small for two regions (a desktop window at 400 % zoom). The
+   document scrolls; the step navigation sticks to the window's bottom edge. */
+@media (max-width: 599.98px) and (max-height: 520px) {
+  html, body { height: auto; overflow: visible; }
+  html { scroll-padding-bottom: 80px; }
+  #app { height: auto; min-height: 100dvh; }
+  .workspace { display: block; overflow: visible; }
+  #stage { height: max(240px, 76dvh); }
+  /* Vertical swipes on the model scroll the sheet; OrbitControls sets touch-action inline, hence !important. */
+  #scene { touch-action: pan-y !important; }
+  #inspector { overflow: visible; border-left: 0; border-top: 1px solid var(--line); }
+  #explore-panel, #panel { flex: none; overflow: visible; }
+}
+@media (min-width: 600px) and (max-width: 760px) and (max-height: 520px) {
+  /* Half a narrow window: beside the button a caption needs three lines. */
+  #app[data-mode=guide] .stage-note { height: 52px; }
+  .stage-caption { min-height: 52px; padding: 3px 8px; font-size: 12px; line-height: 1.25; }
+  #btn-next { padding-inline: 10px; }
+  #btn-prev span { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #btn-prev { padding-inline: 12px; }
+  .view-controls button { padding-inline: 9px; font-size: 13px; }
+  #btn-rotate { display: none; }
+}
+
+@media (max-width: 380px) {
+  .header-label, .ms-unit { display: none; }
+  /* Three views and both ways of opening the watch fill the row; turning the watch by itself is the one to go. */
+  .stage-bottom { gap: 4px; }
+  .view-controls button { padding-inline: 7px; font-size: 13px; }
+  .icon-button { width: 44px; }
+  #btn-rotate { display: none; }
+  #btn-prev span { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #btn-prev { padding-inline: 12px; }
+  .animation-tools { padding-right: 8px; }
+  .guide-footer { column-gap: 8px; }
+  /* Beside the button a caption needs three lines here. */
+  #app[data-mode=guide] .stage-note { height: 52px; }
+  .stage-caption { min-height: 52px; padding: 3px 8px; font-size: 12px; line-height: 1.25; }
+}
+
+@media (pointer: coarse) {
+  .hint-fine { display: none; }
+  .hint-coarse { display: inline; }
+  .view-controls button { min-height: 44px; }
+  .text-button, .facts-content a { min-height: 44px; }
+  .turn-controls button { min-height: 48px; }
+  .lab-note .text-button { flex: none; }
+  /* 44 px to hit, 12 px in the layout: the rest overlaps the plain text above and below. */
+  #step-dots { margin-block: 0; }
+  #step-dots button { height: 44px; margin-block: -12px; }
+}
+@media (pointer: coarse) and (max-width: 760px) and (max-height: 700px), (pointer: coarse) and (max-height: 520px) {
+  /* The bars are the first thing in the sheet here: the hit area can only grow downwards. */
+  #step-dots button { margin-block: 0 -16px; }
+  .guide-top { top: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
+  button:active:not(:disabled) { transform: none; }
+  .icon-button[aria-busy=true][aria-pressed=true] .icon { animation: none; }
+  #crown-description.refused { animation: none; }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight; }
+  /* States that the palette above shows by fill need a system colour here. */
+  .mode-switch button[aria-selected=true] { border-bottom: 3px solid Highlight; }
+  [aria-pressed=true], .view-controls button[aria-pressed=true], .icon-button[aria-pressed=true], .crown-positions button[aria-pressed=true] { forced-color-adjust: none; background-color: Highlight; border-color: Highlight; color: HighlightText; }
+  .crown-positions button[aria-pressed=true] b, .crown-positions button[aria-pressed=true] span { color: HighlightText; }
+  .primary { border: 2px solid ButtonText; }
+  #step-dots button::after { forced-color-adjust: none; height: 5px; background: Canvas; border: 1px solid ButtonText; }
+  #step-dots button.done::after { background: ButtonText; }
+  #step-dots button.active::after { height: 9px; background: Highlight; border-color: Highlight; }
+  .warnbox, .okbox, .simbox, .stage-caption, .ms-zone, #ms-date, #step-count { border: 1px solid CanvasText; }
+  .warnbox::before, .okbox::before { forced-color-adjust: none; background-color: CanvasText; }
+  .ms-dial svg { forced-color-adjust: none; }
+  .ms-day, .ms-midnight { stroke: Canvas; }
+  .ms-night, .ms-rim { stroke: CanvasText; }
+  .ms-window { stroke: Highlight; }
+  #ms-hand circle { fill: Canvas; stroke: CanvasText; }
+  .moon-orb { forced-color-adjust: none; }
+  .moon-night { fill: Canvas; stroke: CanvasText; }
+  .moon-lit, .moon-neutral { fill: CanvasText; }
+  .moon-mare { fill: Canvas; }
+  .guide-footer::before, .stage-top::before, .stage-note::before { display: none; }
+  .guide-footer { border-top: 1px solid CanvasText; }
+  #stage { background: Canvas; }
+  .movement-state, .view-controls { border-color: CanvasText; }
+}

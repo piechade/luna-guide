@@ -1,0 +1,16 @@
+# Only what the build needs goes to the Docker daemon: package files, index.html,
+# tsconfig.json, vite.config.ts, nginx.conf, src/ and public/.
+.git
+.gitignore
+.claude
+.playwright-mcp
+node_modules
+dist
+docs
+tests
+*.log
+*.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+deploy.sh

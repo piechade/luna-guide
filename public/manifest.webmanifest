@@ -1,0 +1,19 @@
+{
+  "name": "Luna Guide – Die Uhr verstehen.",
+  "short_name": "Luna Guide",
+  "description": "Interaktives 3D-Lernmodell einer Mondphasenuhr mit einer Einstellanleitung Schritt für Schritt.",
+  "lang": "de",
+  "dir": "ltr",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eeede8",
+  "theme_color": "#eeede8",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

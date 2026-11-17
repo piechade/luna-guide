@@ -1,0 +1,59 @@
+/* Stage loading state. The markup is static in index.html, so it shows with the
+   first paint, before any script has run. boot.ts sets .stage-ready on <html>
+   when the first 3D frame is on screen. In production builds it also sets
+   .stage-fade, which turns the hand-over from loader to model into a cross-fade. */
+
+.stage-loader {
+  --moon: 52px;
+  /* Centred in the stage's free rectangle (style.css), where the watch will appear. */
+  grid-area: 2 / 1 / 3 / -1; place-self: center; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 0 24px;
+  pointer-events: none; text-align: center;
+  font-size: 13px; font-weight: 600; letter-spacing: .04em; color: var(--muted);
+}
+.stage-ready .stage-loader { opacity: 0; }
+
+/* A moon that waxes and wanes: a lit disc and a shadow disc passing over it,
+   the way the watch's own moon disc passes behind its round masks. Only the
+   transform is animated, so it keeps moving on the compositor while the main
+   thread is busy building the model. */
+.loader-moon {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  width: var(--moon); height: var(--moon); border-radius: 50%;
+  background: #b9c3bb;
+  box-shadow: 0 0 0 1px #cfd5cc, 0 0 0 7px #f9f8f3, 0 0 0 8px #dfe2da;
+}
+.loader-moon::after {
+  content: ''; position: absolute; inset: -1px; border-radius: 50%;
+  background: #f9f8f3;
+  transform: translateX(-104%);
+  animation: loader-phase 2.6s cubic-bezier(.45, 0, .55, 1) infinite alternate;
+  will-change: transform;
+}
+@keyframes loader-phase { to { transform: translateX(104%); } }
+
+/* The read-out has nothing to show before the model exists. It keeps its place, so nothing moves when it appears. */
+html:not(.stage-ready) .movement-state { visibility: hidden; }
+html:not(.stage-ready, .stage-failed) #app button { cursor: progress; }
+
+.stage-fade .stage-loader { transition: opacity .45s ease; }
+.stage-fade #scene { transition: opacity .7s ease; }
+.stage-fade:not(.stage-ready) #scene { opacity: 0; }
+
+/* .stage-failed: neither the 3D application nor the text guide could be loaded. */
+.stage-failed .stage-loader { pointer-events: auto; letter-spacing: 0; font-size: 14px; font-weight: 400; }
+.stage-failed .loader-moon::after { animation: none; transform: translateX(-38%); }
+.stage-failed .stage-loader button { font-size: 14px; min-height: 44px; padding-inline: 14px; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* A still crescent instead of the cycle; style.css already switches the transitions off. */
+  .loader-moon::after { animation: none; transform: translateX(-38%); }
+}
+@media (scripting: none) {
+  /* Without scripts nothing will arrive: show the <noscript> sentence only. */
+  .loader-moon, .loader-label { display: none; }
+  .stage-loader { letter-spacing: 0; font-size: 14px; font-weight: 400; }
+}
+@media (max-width: 760px), (max-height: 520px) {
+  .stage-loader { --moon: 40px; gap: 12px; font-size: 12px; }
+}

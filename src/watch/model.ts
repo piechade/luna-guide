@@ -1,364 +1,273 @@
 import * as THREE from 'three';
-import {
-  APERTURE_CENTER,
-  DATE_CENTER_X,
-  DATE_H,
-  DATE_W,
-  DIAL_R,
-  DateDisc,
-  makeDialTexture,
-  makeMoonDiscTexture,
-} from './textures';
-import { SYNODIC_MONTH } from '../moon';
+import { CROWN_BASE_X, CROWN_TRAVEL, CROWN_Y } from './dimensions';
+import { makeMaterials, type WatchMaterials } from './materials';
+import { makeCase } from './case';
+import { makeBracelet } from './bracelet';
+import { makeDial, type DialParts } from './dial';
+import { makeHands, type HandParts } from './hands';
+import { makeCrown, type CrownParts } from './crown';
+import type { Movement } from './movement/movement';
+import { DATE_POSITIONS, Mechanism, mod } from './mechanism';
 
-// The watch lies flat: dial faces +Y, 12 o'clock points to -Z, crown at +X.
-// All dimensions roughly in millimetres (case Ø 39 mm → radius 19.5).
+export { CROWN_LABELS } from './labels';
 
-const CASE_R = 19.5;
-const DIAL_Y = 2.25;
-const MOON_DISC_R = 7.6;
-const MOON_DISC_CENTER_Z = APERTURE_CENTER + 3.1; // disc center sits below the aperture
+/** Sector opacity while the calendar wheels are engaged, and while they are not. */
+const ZONE_ENGAGED = 0.6;
+const ZONE_IDLE = 0.2;
+/** The opened caseback drops this far and slides out of the picture towards three o'clock: away
+ * from the camera of the opened back, which looks up from the nine o'clock side. */
+const BACK_DROP = 30;
+const BACK_SLIDE = 80;
+/** The oscillating weight as a damped pendulum about the dial axis: stiffness per unit of the
+ * gravity that lies in the movement's plane (1/s²), damping (1/s) and integration step (s). */
+const ROTOR_STIFFNESS = 40;
+const ROTOR_DAMPING = 3;
+const ROTOR_STEP = 1 / 120;
 
-export const CROWN_LABELS = ['verschraubt', 'Position 1 · Aufzug', 'Position 2 · Korrektur', 'Position 3 · Zeit'] as const;
+const smooth = (v: number): number => v * v * (3 - 2 * v);
+const nextTask = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 
+/**
+ * The visible watch. All time and calendar state lives in `mech`; this class
+ * only draws it, so hands, date window, moon disc and movement can never
+ * disagree.
+ */
 export class WatchModel {
   readonly group = new THREE.Group();
-
-  private readonly crownGroup = new THREE.Group();
-  private readonly crownSpinner = new THREE.Group();
-  private readonly hourGroup = new THREE.Group();
-  private readonly minuteGroup = new THREE.Group();
-  private readonly secondGroup = new THREE.Group();
-  private readonly moonDisc: THREE.Mesh;
-  private readonly dangerSector: THREE.Mesh;
-  private readonly dateDisc = new DateDisc();
-
-  /** Continuous crown pull-out: 0 = screwed down … 3 = time-setting. */
+  readonly bracelet: THREE.Group;
+  readonly mech = new Mechanism();
+  /** Crown position 0 (screwed down) to 3 (time setting); fractional while moving. */
   crownPull = 0;
-  /** Displayed time in minutes since 12:00 (0..720 wraps the dial). */
-  displayMinutes = 10 * 60 + 9;
-  /** Second hand angle in seconds 0..60. */
-  displaySeconds = 34;
-  /** Whether the movement is running (advances time + sweeps seconds). */
+  /** The balance is swinging: the movement advances in real time. */
   running = false;
-  /** When true, display tracks the real clock (after successful sync). */
-  liveSync = false;
-  /** Moon disc rotation expressed in days from the full-moon-centered pose. */
-  moonDays = 0;
-
+  displaySeconds = 34;
+  /** 0..1: how prominently the switching-window sector (20:00–04:00) is drawn on the dial. */
+  zone = 0;
+  /** 0 = assembled, 1 = opened from the front: crystal, hands and dial lifted away from the movement. */
+  explode = 0;
+  /** 0 = closed, 1 = opened from the back: the caseback dropped away from the rotor side. */
+  openBack = 0;
+  /** The camera, if any: the oscillating weight hangs towards the bottom of its picture, so turning
+   * the view swings it like turning the watch in the hand. */
+  viewer: THREE.Object3D | null = null;
+  /** Angle of the oscillating weight (rotation.y). */
+  rotor = 0;
+  private rotorSpeed = 0;
+  private readonly materials: WatchMaterials;
+  private readonly dial: DialParts;
+  private readonly hands: HandParts;
+  private readonly crown: CrownParts;
+  private readonly caseTop: THREE.Group;
+  private readonly caseBack: THREE.Group;
+  /** Built on the first opening (see loadMovement), then kept. */
+  private movement: Movement | null = null;
+  private movementLoad: Promise<void> | null = null;
+  /** The movement's groups are in the scene graph only while the watch is open. */
+  private movementShown = false;
+  /** The rotor side is shown (the back is open). */
+  private rotorShown = false;
+  /** While set, the movement follows the device clock from this moment on. */
+  private anchor: { epochMs: number; minutes: number; seconds: number } | null = null;
+  private shownDate = 1;
+  private shownMoon = 0;
+  private shownZone = 0;
   constructor() {
-    const steel = new THREE.MeshStandardMaterial({ color: 0xd9dee6, metalness: 1.0, roughness: 0.16 });
-    const steelBrushed = new THREE.MeshStandardMaterial({ color: 0xc4cad4, metalness: 0.95, roughness: 0.34 });
-
-    // --- Case (lathe profile, axis = Y) ---
-    const profile: THREE.Vector2[] = [
-      new THREE.Vector2(5.5, -4.7),
-      new THREE.Vector2(15.5, -4.7),
-      new THREE.Vector2(18.6, -3.9),
-      new THREE.Vector2(CASE_R + 0.3, -1.4),
-      new THREE.Vector2(CASE_R + 0.3, 1.2),
-      new THREE.Vector2(18.9, 2.6),
-      new THREE.Vector2(17.6, 3.5),
-      new THREE.Vector2(16.7, 3.7),
-      new THREE.Vector2(16.4, 2.0),
-    ];
-    const caseMesh = new THREE.Mesh(new THREE.LatheGeometry(profile, 128), steel);
-    this.group.add(caseMesh);
-
-    const caseback = new THREE.Mesh(new THREE.CylinderGeometry(15.5, 15.5, 0.8, 96), steelBrushed);
-    caseback.position.y = -4.7;
-    this.group.add(caseback);
-
-    // --- Lugs (tapered, hugging the case) ---
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        const geo = new THREE.BoxGeometry(2.9, 2.7, 6.2);
-        // Taper the outer end a little
-        const pos = geo.attributes.position;
-        for (let i = 0; i < pos.count; i++) {
-          if (pos.getZ(i) > 0) {
-            pos.setX(i, pos.getX(i) * 0.72);
-            pos.setY(i, pos.getY(i) * 0.7);
-          }
-        }
-        geo.computeVertexNormals();
-        const lug = new THREE.Mesh(geo, steel);
-        lug.position.set(sx * 10.9, -1.3, sz * 16.6);
-        lug.rotation.x = sz > 0 ? 0.2 : Math.PI - 0.2; // taper always outward, dipping down
-        lug.rotation.y = sx * sz * 0.14;
-        this.group.add(lug);
-      }
-    }
-
-    // --- Dial ---
-    const dialTex = makeDialTexture();
-    const dial = new THREE.Mesh(
-      new THREE.CircleGeometry(DIAL_R, 128),
-      new THREE.MeshStandardMaterial({
-        map: dialTex,
-        transparent: true,
-        alphaTest: 0.4,
-        metalness: 0.35,
-        roughness: 0.5,
-      }),
-    );
-    dial.rotation.x = -Math.PI / 2;
-    dial.position.y = DIAL_Y;
-    dial.renderOrder = 1; // danger sector (2) and crystal (3) must blend on top
-    this.group.add(dial);
-
-    // Rehaut (chapter ring wall between dial rim and case lip). It is only ever
-    // seen from the INSIDE, so it needs DoubleSide: a front-side-only cylinder
-    // is back-face culled here and the near-black disc mask shows through as a
-    // dark gap around the dial. Its bottom tucks under the dial rim and its top
-    // meets the case's inner lip (16.7 @ y 3.7), so no slot is left at either end.
-    const rehautMat = steelBrushed.clone();
-    rehautMat.side = THREE.DoubleSide;
-    const rehaut = new THREE.Mesh(
-      new THREE.CylinderGeometry(16.66, DIAL_R - 0.15, 1.68, 128, 1, true),
-      rehautMat,
-    );
-    rehaut.position.y = DIAL_Y + 0.59; // spans y 2.0 … 3.68
-    this.group.add(rehaut);
-
-    // --- Moon disc behind the dial ---
-    this.moonDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(MOON_DISC_R, 96),
-      new THREE.MeshStandardMaterial({
-        map: makeMoonDiscTexture(),
-        metalness: 0.25,
-        roughness: 0.55,
-        // The disc overhangs the dial radius towards 6 o'clock — clip it there
-        // so it cannot poke through the case flank (requires localClippingEnabled).
-        clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, 0, -1), DIAL_R - 0.3)],
-      }),
-    );
-    this.moonDisc.rotation.x = -Math.PI / 2;
-    this.moonDisc.position.set(0, DIAL_Y - 0.45, MOON_DISC_CENTER_Z);
-    this.group.add(this.moonDisc);
-
-    // Opaque annulus just under the dial rim: clips any moon-disc overflow that
-    // would otherwise peek through the dial/rehaut gap. It sits close under the
-    // dial and carries the dial's own edge blue, so the sliver of it visible
-    // beneath the rim reads as the dial's edge instead of a black crack.
-    const discMask = new THREE.Mesh(
-      new THREE.RingGeometry(DIAL_R - 0.4, DIAL_R + 0.7, 96),
-      new THREE.MeshBasicMaterial({ color: 0x123663 }),
-    );
-    discMask.rotation.x = -Math.PI / 2;
-    discMask.position.y = DIAL_Y - 0.18;
-    this.group.add(discMask);
-
-    // --- Date plate behind the window at 3 ---
-    const datePlate = new THREE.Mesh(
-      new THREE.PlaneGeometry(DATE_W + 0.6, DATE_H + 0.6),
-      new THREE.MeshBasicMaterial({ map: this.dateDisc.texture }),
-    );
-    datePlate.rotation.x = -Math.PI / 2;
-    datePlate.position.set(DATE_CENTER_X, DIAL_Y - 0.28, 0);
-    this.group.add(datePlate);
-
-    // --- Danger sector (quick-set lock-out ~20:00–03:00) ---
-    this.dangerSector = new THREE.Mesh(
-      new THREE.RingGeometry(9.6, 15.6, 96, 1, 0, (210 * Math.PI) / 180),
-      new THREE.MeshBasicMaterial({
-        color: 0xff5555,
-        transparent: true,
-        opacity: 0,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
-    );
-    this.dangerSector.rotation.x = -Math.PI / 2;
-    this.dangerSector.position.y = DIAL_Y + 0.12;
-    this.dangerSector.renderOrder = 2;
-    this.group.add(this.dangerSector);
-
-    // --- Hands ---
-    const handMat = new THREE.MeshStandardMaterial({
-      color: 0xeef1f6,
-      metalness: 1.0,
-      roughness: 0.12,
-      side: THREE.DoubleSide,
-    });
-    const hour = new THREE.Mesh(handShape(9.2, 1.7), handMat);
-    this.hourGroup.add(hour);
-    this.hourGroup.position.y = DIAL_Y + 0.55;
-    const minute = new THREE.Mesh(handShape(14.2, 1.2), handMat);
-    this.minuteGroup.add(minute);
-    this.minuteGroup.position.y = DIAL_Y + 0.85;
-    const second = new THREE.Mesh(secondShape(), handMat);
-    this.secondGroup.add(second);
-    this.secondGroup.position.y = DIAL_Y + 1.1;
-    this.group.add(this.hourGroup, this.minuteGroup, this.secondGroup);
-
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.9, 32), handMat);
-    cap.position.y = DIAL_Y + 0.7;
-    this.group.add(cap);
-
-    // --- Crystal (domed sapphire) ---
-    // Large sphere radius → gentle dome (~2 mm rise), colorless and near
-    // invisible like the real sapphire instead of a tall milky blue bubble.
-    const domeR = 70;
-    const theta = Math.asin(16.5 / domeR);
-    const crystal = new THREE.Mesh(
-      new THREE.SphereGeometry(domeR, 96, 48, 0, Math.PI * 2, 0, theta),
-      new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.06,
-        roughness: 0.03,
-        metalness: 0,
-        clearcoat: 1,
-        clearcoatRoughness: 0.05,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
-    );
-    crystal.position.y = 3.6 - domeR * Math.cos(theta);
-    crystal.renderOrder = 3;
-    this.group.add(crystal);
-
-    // --- Crown at +X ---
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 7.5, 24), steelBrushed);
-    stem.rotation.z = Math.PI / 2;
-    stem.position.x = -3.6;
-    this.crownSpinner.add(stem);
-
-    const crownBody = new THREE.Mesh(new THREE.CylinderGeometry(2.05, 2.05, 2.0, 48), steel);
-    crownBody.rotation.z = Math.PI / 2;
-    this.crownSpinner.add(crownBody);
-
-    // Knurling ridges
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * Math.PI * 2;
-      const ridge = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.45, 0.45), steelBrushed);
-      ridge.position.set(0, Math.cos(a) * 2.05, Math.sin(a) * 2.05);
-      ridge.rotation.x = -a;
-      this.crownSpinner.add(ridge);
-    }
-    const crownCap = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.9, 0.5, 48), steel);
-    crownCap.rotation.z = Math.PI / 2;
-    crownCap.position.x = 1.2;
-    this.crownSpinner.add(crownCap);
-    const rose = new THREE.Mesh(new THREE.SphereGeometry(1.15, 32, 16), steelBrushed);
-    rose.scale.set(0.35, 1, 1);
-    rose.position.x = 1.45;
-    this.crownSpinner.add(rose);
-
-    this.crownGroup.add(this.crownSpinner);
-    this.group.add(this.crownGroup);
-
-    this.setDate(new Date().getDate());
-    this.applyCrown();
-    this.applyHands();
-    this.applyMoon();
+    this.group.name = 'Luna Guide · original study model v2';
+    this.materials = makeMaterials();
+    const watchCase = makeCase(this.materials);
+    this.caseTop = watchCase.top;
+    this.caseBack = watchCase.back;
+    this.bracelet = makeBracelet(this.materials);
+    this.dial = makeDial(this.materials);
+    this.hands = makeHands(this.materials);
+    this.crown = makeCrown(this.materials);
+    this.group.add(watchCase.group, this.bracelet, this.dial.group, this.hands.group, this.crown.carriage, this.crown.tube);
+    this.snap();
   }
 
-  /** Crown spin around its own axis (radians, cosmetic). */
-  set crownSpin(a: number) {
-    this.crownSpinner.rotation.x = a;
+  set crownSpin(a: number) { this.crown.spinner.rotation.x = a; }
+  get crownSpin(): number { return this.crown.spinner.rotation.x; }
+
+  /** The movement is built and can be shown. */
+  get movementReady(): boolean { return this.movement !== null; }
+
+  /** The movement's groups (empty until it is built), e.g. to compile their shaders before they show. */
+  get movementGroups(): readonly THREE.Group[] { return this.movement?.groups ?? []; }
+
+  /** Downloads and builds the movement, once; settles when it can be shown. A failed download may be retried. */
+  loadMovement(): Promise<void> {
+    this.movementLoad ??= import('./movement/movement')
+      .then(({ buildMovement }) => buildMovement(this.materials, nextTask))
+      .then(movement => {
+        this.movement = movement;
+      })
+      .catch((error: unknown) => {
+        this.movementLoad = null;
+        throw error;
+      });
+    return this.movementLoad;
   }
 
-  get crownSpin(): number {
-    return this.crownSpinner.rotation.x;
+  /** Run in step with the device clock from `epochMs` on (the second hand at `seconds` then). */
+  lockToClock(epochMs: number, seconds: number): void {
+    this.anchor = { epochMs, minutes: this.mech.minutes, seconds };
+    this.running = true;
   }
 
-  get dateValue(): number {
-    return this.dateDisc.value;
+  releaseClock(): void { this.anchor = null; }
+  get lockedToClock(): boolean { return this.anchor !== null; }
+
+  /** Show the device's time, date and the given moon position, and keep running with it. */
+  showWallClock(now: Date, moon: number): void {
+    const seconds = now.getSeconds() + now.getMilliseconds() / 1000;
+    this.mech.set({ minuteOfDay: now.getHours() * 60 + now.getMinutes() + seconds / 60, date: now.getDate(), moon });
+    this.displaySeconds = seconds;
+    this.lockToClock(now.getTime(), seconds);
   }
 
-  setDate(day: number): void {
-    this.dateDisc.set(day);
+  /** Jump the displays to the movement's state without animating the change. */
+  snap(): void {
+    this.shownDate = this.mech.date;
+    this.shownMoon = this.mech.moon;
+    this.shownZone = this.zoneTarget();
+    this.tick(0);
   }
 
-  set dangerOpacity(o: number) {
-    (this.dangerSector.material as THREE.MeshBasicMaterial).opacity = o;
+  private zoneTarget(): number {
+    return this.zone * (this.mech.inLockout ? ZONE_ENGAGED : ZONE_IDLE);
   }
 
-  /**
-   * moonDays = 0 → a moon sits centered in the aperture (full-moon pose).
-   * One day advances the disc by π / SYNODIC_MONTH (two-moon disc).
-   */
-  private applyMoon(): void {
-    this.moonDisc.rotation.z = (this.moonDays * Math.PI) / SYNODIC_MONTH;
-  }
-
-  private applyCrown(): void {
-    this.crownGroup.position.set(CASE_R + 1.15 + this.crownPull * 1.05, 0, 0);
-  }
-
-  private applyHands(): void {
-    const m = ((this.displayMinutes % 720) + 720) % 720;
-    this.minuteGroup.rotation.y = -((m % 60) / 60) * Math.PI * 2;
-    this.hourGroup.rotation.y = -(m / 720) * Math.PI * 2;
-    this.secondGroup.rotation.y = -(((this.displaySeconds % 60) + 60) % 60 / 60) * Math.PI * 2;
-  }
-
-  /** Advance runtime state; called every frame. */
   tick(dt: number): void {
-    if (this.liveSync) {
-      const now = new Date();
-      this.displayMinutes = (now.getHours() % 12) * 60 + now.getMinutes() + now.getSeconds() / 60;
-      this.displaySeconds = now.getSeconds() + now.getMilliseconds() / 1000;
+    const { mech } = this;
+    if (this.anchor) {
+      const elapsed = Date.now() - this.anchor.epochMs;
+      const target = this.anchor.minutes + elapsed / 60_000;
+      if (target > mech.minutes) mech.turnTo(target); // a device clock set back never turns the hands back
+      this.displaySeconds = this.anchor.seconds + elapsed / 1000;
     } else if (this.running) {
-      this.displayMinutes += dt / 60;
+      mech.turn(dt / 60);
       this.displaySeconds += dt;
     }
-    this.applyHands();
-    this.applyCrown();
-    this.applyMoon();
+
+    const dial = mech.dialMinutes;
+    this.hands.minute.rotation.y = -(dial % 60) / 60 * Math.PI * 2;
+    this.hands.hour.rotation.y = -dial / 720 * Math.PI * 2;
+    // Eight impulses per second represent the 28,800 A/h reference movement.
+    this.hands.second.rotation.y = -mod(Math.floor(this.displaySeconds * 8) / 8, 60) / 60 * Math.PI * 2;
+    this.crown.carriage.position.set(CROWN_BASE_X + this.crownPull * CROWN_TRAVEL, CROWN_Y, 0);
+
+    // Date ring and moon disc jump quickly but visibly; both only ever move forward.
+    const dateAhead = mod(mech.date - this.shownDate, DATE_POSITIONS);
+    this.shownDate = dateAhead < 0.004 || dateAhead > DATE_POSITIONS - 0.5
+      ? mech.date
+      : this.shownDate + dateAhead * (1 - Math.exp(-dt * 26));
+    const moonAhead = mech.moon - this.shownMoon;
+    this.shownMoon = moonAhead < 0.004 ? mech.moon : this.shownMoon + moonAhead * (1 - Math.exp(-dt * 20));
+    this.shownZone += (this.zoneTarget() - this.shownZone) * (1 - Math.exp(-dt * 8));
+    this.dial.setDate(this.shownDate);
+    this.dial.setMoon(this.shownMoon);
+    this.dial.setDanger(this.shownZone);
+
+    // Opening the watch from the front: crystal, hands and dial rise out of the
+    // picture one after the other, so nothing is left between the eye and the
+    // works. From the back the caseback drops away.
+    const lift = smooth(this.explode);
+    const open = this.explode >= 1;
+    this.caseTop.position.y = lift * 150;
+    this.hands.group.position.y = lift * 105;
+    this.dial.face.position.y = lift * 60;
+    this.caseTop.visible = this.hands.group.visible = this.dial.face.visible = !open;
+    const away = smooth(this.openBack);
+    this.caseBack.position.set(away * away * BACK_SLIDE, -away * BACK_DROP, 0);
+    this.caseBack.visible = this.openBack < 1;
+    this.drawMovement(dt);
   }
-}
 
-function handShape(len: number, w: number): THREE.ShapeGeometry {
-  // Dauphine-style: elongated diamond with a short tail, pointing +Y in shape
-  // space; rotated so it points to 12 o'clock (-Z) at rotation 0.
-  const s = new THREE.Shape();
-  s.moveTo(0, len);
-  s.lineTo(-w / 2, len * 0.28);
-  s.lineTo(-w / 2.6, -2.0);
-  s.lineTo(w / 2.6, -2.0);
-  s.lineTo(w / 2, len * 0.28);
-  s.closePath();
-  const geo = new THREE.ShapeGeometry(s);
-  geo.rotateX(-Math.PI / 2);
-  return geo;
-}
-
-function secondShape(): THREE.ShapeGeometry {
-  const s = new THREE.Shape();
-  const w = 0.28;
-  s.moveTo(-w / 2, -3.6);
-  s.lineTo(-w / 2, 15.2);
-  s.lineTo(w / 2, 15.2);
-  s.lineTo(w / 2, -3.6);
-  s.closePath();
-  const geo = new THREE.ShapeGeometry(s);
-  const ring = new THREE.ShapeGeometry(circleShape(0.85, 0, -2.4));
-  const merged = mergeGeos(geo, ring);
-  merged.rotateX(-Math.PI / 2);
-  return merged as THREE.ShapeGeometry;
-}
-
-function circleShape(r: number, x: number, y: number): THREE.Shape {
-  const s = new THREE.Shape();
-  s.absarc(x, y, r, 0, Math.PI * 2, false);
-  return s;
-}
-
-function mergeGeos(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.BufferGeometry {
-  // Tiny local merge to avoid pulling in BufferGeometryUtils.
-  const geos = [a, b].map((g) => g.toNonIndexed());
-  const total = geos.reduce((n, g) => n + g.attributes.position.count, 0);
-  const pos = new Float32Array(total * 3);
-  let off = 0;
-  for (const g of geos) {
-    pos.set(g.attributes.position.array as Float32Array, off);
-    off += g.attributes.position.array.length;
+  /** Feeds the movement while the watch is open; while it is closed the movement is out of the scene graph. */
+  private drawMovement(dt: number): void {
+    const front = this.explode > 0.001;
+    const back = this.openBack > 0.001;
+    const mv = this.movement;
+    if (!mv) {
+      // Normally the UI waits for loadMovement() before it opens the watch.
+      if (front || back) void this.loadMovement().catch(() => undefined);
+      return;
+    }
+    const shown = front || back;
+    if (shown !== this.movementShown) {
+      this.movementShown = shown;
+      for (const g of mv.groups) {
+        if (shown) this.group.add(g);
+        else this.group.remove(g);
+      }
+      if (shown) mv.keyless.resync();
+    }
+    // The weight is only seen, and only swings, with the back open; it comes to rest at once when the
+    // back opens, which the keyless works must not count as winding.
+    if (back !== this.rotorShown) {
+      this.rotorShown = back;
+      if (back) {
+        const rest = this.rotorRest();
+        this.rotorSpeed = 0;
+        this.rotor -= Math.atan2(Math.sin(this.rotor - rest), Math.cos(this.rotor - rest));
+        mv.keyless.resync();
+      }
+    }
+    if (!shown) return;
+    mv.dialSide.group.visible = front;
+    mv.backSide.rotorSide.visible = back;
+    if (back) this.swingRotor(dt);
+    const s = mv.state;
+    s.minutes = this.mech.minutes;
+    s.minuteOfDay = this.mech.minuteOfDay;
+    s.date = this.shownDate;
+    s.moon = this.shownMoon;
+    s.crownPull = this.crownPull;
+    s.crownSpin = this.crownSpin;
+    s.seconds = this.displaySeconds;
+    s.running = this.running;
+    s.rotor = this.rotor;
+    s.armed = this.mech.armed;
+    s.dt = dt;
+    mv.keyless.update(s);
+    if (front) mv.dialSide.update(s);
+    if (back) mv.backSide.update(s);
   }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  out.computeVertexNormals();
-  return out;
+
+  // Gravity as the viewer sees it: the bottom of the picture, laid into the
+  // movement's plane. Its share in that plane (0 seen edge-on, 1 seen face-on)
+  // sets how strongly the weight is pulled.
+  private gravityX = 0;
+  private gravityZ = 1;
+
+  private readGravity(): void {
+    const v = this.viewer;
+    if (!v) { this.gravityX = 0; this.gravityZ = 1; return; }
+    v.updateMatrixWorld();
+    const e = v.matrixWorld.elements;
+    this.gravityX = -e[4];
+    this.gravityZ = -e[6];
+  }
+
+  /** The weight's angle at rest: like a real oscillating weight, its heavy side (local +z) hangs towards the bottom of the picture. */
+  private rotorRest(): number {
+    this.readGravity();
+    return Math.atan2(this.gravityX, this.gravityZ);
+  }
+
+  private swingRotor(dt: number): void {
+    const rest = this.rotorRest();
+    const pull = ROTOR_STIFFNESS * Math.hypot(this.gravityX, this.gravityZ);
+    for (let left = dt; left > 1e-6; left -= ROTOR_STEP) {
+      const h = Math.min(ROTOR_STEP, left);
+      this.rotorSpeed += (-pull * Math.sin(this.rotor - rest) - ROTOR_DAMPING * this.rotorSpeed) * h;
+      this.rotor += this.rotorSpeed * h;
+    }
+    // Settled: come to rest exactly, so a still picture stays still.
+    const off = Math.atan2(Math.sin(this.rotor - rest), Math.cos(this.rotor - rest));
+    if (Math.abs(this.rotorSpeed) < 1e-3 && Math.abs(off) < 1e-3) {
+      this.rotorSpeed = 0;
+      this.rotor -= off;
+    }
+  }
 }
